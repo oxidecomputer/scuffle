@@ -23,6 +23,7 @@ use std::os::unix::process::ExitStatusExt;
 use std::process::Child;
 use std::process::Command;
 use std::process::Output;
+use std::process::Stdio;
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
@@ -173,6 +174,12 @@ pub enum IsolatedConfigdBuildError {
     SvccfgImportError { path: Utf8PathBuf, status: i32, err: String },
     #[error("failed to exec `svc.configd` pointed at the isolated repo")]
     SvcConfigdExec(#[source] io::Error),
+    #[error("failed creating svc.configd output file `{path}`")]
+    SvcConfigdCreateOutputFile {
+        path: Utf8PathBuf,
+        #[source]
+        err: io::Error,
+    },
 }
 
 pub struct IsolatedConfigdBuilder {
@@ -233,13 +240,56 @@ impl IsolatedConfigdBuilder {
             })?;
         }
 
+        // Redirect the `svc.configd` instance's stdout/stderr to files within
+        // our temp directory.
+        let stdout_path = dir.path().join("svc.configd.stdout");
+        let stdout_f = File::create_new(&stdout_path).map_err(|err| {
+            IsolatedConfigdBuildError::SvcConfigdCreateOutputFile {
+                path: stdout_path.to_owned(),
+                err,
+            }
+        })?;
+        let stderr_path = dir.path().join("svc.configd.stderr");
+        let stderr_f = File::create_new(&stderr_path).map_err(|err| {
+            IsolatedConfigdBuildError::SvcConfigdCreateOutputFile {
+                path: stderr_path.to_owned(),
+                err,
+            }
+        })?;
+
         // Spawn a `svc.configd` pointed to our isolated repo.
-        let configd_child = Command::new("/lib/svc/bin/svc.configd")
+        let mut configd_child = Command::new("/lib/svc/bin/svc.configd")
             .arg("-n") // don't daemonize
             .args(["-d", door_path.as_str()])
             .args(["-r", repo_path.as_str()])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .spawn()
             .map_err(IsolatedConfigdBuildError::SvcConfigdExec)?;
+
+        // Spawn threads to copy data from the pipes to the files.
+        //
+        // We let these threads detach; we can't really do anything if they fail
+        // anyway.
+        let child_stdout = configd_child
+            .stdout
+            .take()
+            .expect("child configured with piped stdout");
+        thread::spawn(move || {
+            let mut stdout_f = io::BufWriter::new(stdout_f);
+            let mut child_stdout = io::BufReader::new(child_stdout);
+            _ = io::copy(&mut child_stdout, &mut stdout_f);
+        });
+        let child_stderr = configd_child
+            .stderr
+            .take()
+            .expect("child configured with piped stderr");
+        thread::spawn(move || {
+            let mut stderr_f = io::BufWriter::new(stderr_f);
+            let mut child_stderr = io::BufReader::new(child_stderr);
+            _ = io::copy(&mut child_stderr, &mut stderr_f);
+        });
 
         Ok(IsolatedConfigd {
             dir,
