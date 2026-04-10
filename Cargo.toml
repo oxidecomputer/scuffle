@@ -5,7 +5,11 @@ edition = "2024"
 license = "MPL-2.0"
 
 [dependencies]
+chrono = "0.4"
 libc = "0.2"
+libscf-sys = "1.1"
+num-traits = "0.2"
+oxnet = "0.1.4"
 thiserror = "2.0"
 
 # testing-only dependencies (spinning up an isolated `svc.configd`)

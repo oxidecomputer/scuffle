@@ -16,6 +16,7 @@ use camino::Utf8Path;
 use camino::Utf8PathBuf;
 use camino_tempfile::Utf8TempDir;
 use std::collections::BTreeSet;
+use std::ffi::OsStr;
 use std::fs::File;
 use std::io;
 use std::io::Write;
@@ -94,22 +95,23 @@ impl IsolatedConfigd {
     /// `svc.configd`. `svccfg refresh` uses a different path when talking to an
     /// isolated instance where it directly modifies the instance's snapshots,
     /// which _does_ work with an isolated `svc.configd`.
-    pub fn refresh(
+    pub fn refresh<S: AsRef<OsStr>>(
         &self,
-        fmri: &str,
+        fmri: S,
     ) -> Result<(), IsolatedConfigdRefreshError> {
         let output = Command::new("svccfg")
             .env("SVCCFG_DOOR", self.door_path().as_str())
-            .args(["-s", fmri])
+            .arg("-s")
+            .arg(&fmri)
             .arg("refresh")
             .output()
             .map_err(|err| IsolatedConfigdRefreshError::SvccfgRefreshExec {
-                fmri: fmri.to_owned(),
+                fmri: fmri.as_ref().to_string_lossy().into_owned(),
                 err,
             })?;
         check_command_output(output).map_err(|err| {
             IsolatedConfigdRefreshError::SvccfgRefreshError {
-                fmri: fmri.to_owned(),
+                fmri: fmri.as_ref().to_string_lossy().into_owned(),
                 err,
             }
         })
