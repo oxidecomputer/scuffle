@@ -164,7 +164,7 @@ pub enum IsolatedConfigdBuildError {
         err: io::Error,
     },
 
-    #[error("faild writing to fake service manifest file `{path}`")]
+    #[error("failed writing to fake service manifest file `{path}`")]
     FakeServiceManifestWrite {
         path: Utf8PathBuf,
         #[source]
