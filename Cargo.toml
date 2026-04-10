@@ -11,13 +11,16 @@ thiserror = "2.0"
 # testing-only dependencies (spinning up an isolated `svc.configd`)
 camino = { version = "1.2.2", optional = true }
 camino-tempfile = { version = "1.4.1", optional = true }
+regex = { version = "1.12.3", optional = true }
 
 [dev-dependencies]
 camino = "1.2.2"
 camino-tempfile = "1.4.1"
+regex = "1.12.3"
 
 [features]
 testing = [
     "dep:camino",
     "dep:camino-tempfile",
+    "dep:regex",
 ]

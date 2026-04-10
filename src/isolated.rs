@@ -15,6 +15,7 @@
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
 use camino_tempfile::Utf8TempDir;
+use regex::Regex;
 use std::collections::BTreeSet;
 use std::fs::File;
 use std::io;
@@ -156,6 +157,9 @@ impl IsolatedConfigd {
 pub enum IsolatedConfigdBuildError {
     #[error("failed to create temp directory")]
     CreateTempDir(#[source] io::Error),
+
+    #[error("invalid fake service name: {0:?}")]
+    InvalidFakeServiceName(String),
 
     #[error("failed creating fake service manifest file `{path}`")]
     FakeServiceManifestCreate {
@@ -405,6 +409,17 @@ fn write_service_manifest(
     service: &str,
     path: &Utf8Path,
 ) -> Result<(), IsolatedConfigdBuildError> {
+    // Do some _very basic_ validation on `service` to ensure we don't have any
+    // XML injection. We only expect tests to want service names like
+    // "foo/bar/baz", so we just ensure that the name contains only alphanumbers
+    // plus `-`, `_`, and `/`.
+    let strict_service_name_check = Regex::new(r"^[-/[[:word:]]]+$").unwrap();
+    if !strict_service_name_check.is_match(service) {
+        return Err(IsolatedConfigdBuildError::InvalidFakeServiceName(
+            service.to_string(),
+        ));
+    }
+
     let f = File::create_new(path).map_err(|err| {
         IsolatedConfigdBuildError::FakeServiceManifestCreate {
             path: path.to_path_buf(),
