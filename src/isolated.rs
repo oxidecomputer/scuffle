@@ -32,6 +32,10 @@ use std::time::Instant;
 // give up and send `SIGKILL`?
 const SIGINT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 
+// When we start `svc.configd`, how long are we willing to wait for the door to
+// show up?
+const SVC_CONFIGD_DOOR_CREATE_TIMEOUT: Duration = Duration::from_secs(10);
+
 pub struct IsolatedConfigd {
     dir: Utf8TempDir,
     door_path: Utf8PathBuf,
@@ -152,34 +156,50 @@ impl IsolatedConfigd {
 pub enum IsolatedConfigdBuildError {
     #[error("failed to create temp directory")]
     CreateTempDir(#[source] io::Error),
+
     #[error("failed creating fake service manifest file `{path}`")]
     FakeServiceManifestCreate {
         path: Utf8PathBuf,
         #[source]
         err: io::Error,
     },
+
     #[error("faild writing to fake service manifest file `{path}`")]
     FakeServiceManifestWrite {
         path: Utf8PathBuf,
         #[source]
         err: io::Error,
     },
+
     #[error("failed to exec `svccfg import {path}`")]
     SvccfgImportExec {
         path: Utf8PathBuf,
         #[source]
         err: io::Error,
     },
+
     #[error("error during `svccfg import {path}` (exited {status}): {err}")]
     SvccfgImportError { path: Utf8PathBuf, status: i32, err: String },
+
     #[error("failed to exec `svc.configd` pointed at the isolated repo")]
     SvcConfigdExec(#[source] io::Error),
+
     #[error("failed creating svc.configd output file `{path}`")]
     SvcConfigdCreateOutputFile {
         path: Utf8PathBuf,
         #[source]
         err: io::Error,
     },
+
+    // Caller will need to hold on to the `tempdir` to actually inspect the
+    // contents, or call `.keep()` on it. We don't want to do that by default to
+    // avoid leaving behind detritus.
+    #[error(
+        "svc.configd did not create door file; consider inspecting \
+         contents of `{}`",
+         .tempdir.path(),
+    )]
+    SvcConfigdNoDoor { tempdir: Utf8TempDir },
 }
 
 pub struct IsolatedConfigdBuilder {
@@ -291,11 +311,35 @@ impl IsolatedConfigdBuilder {
             _ = io::copy(&mut child_stderr, &mut stderr_f);
         });
 
-        Ok(IsolatedConfigd {
-            dir,
-            door_path,
-            configd_child: Some(configd_child),
-        })
+        // Wait for `svc.configd` to create the door.
+        let wait_for_door_start = Instant::now();
+        loop {
+            if door_path.exists() {
+                return Ok(IsolatedConfigd {
+                    dir,
+                    door_path,
+                    configd_child: Some(configd_child),
+                });
+            }
+
+            // Is svc.configd still running?
+            if let Ok(Some(_exit_status)) = configd_child.try_wait() {
+                return Err(IsolatedConfigdBuildError::SvcConfigdNoDoor {
+                    tempdir: dir,
+                });
+            }
+
+            // Are we past the deadline?
+            if wait_for_door_start.elapsed() >= SVC_CONFIGD_DOOR_CREATE_TIMEOUT
+            {
+                return Err(IsolatedConfigdBuildError::SvcConfigdNoDoor {
+                    tempdir: dir,
+                });
+            }
+
+            // Sleep briefly then check again.
+            thread::sleep(Duration::from_millis(100));
+        }
     }
 }
 
