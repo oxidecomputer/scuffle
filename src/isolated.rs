@@ -15,7 +15,6 @@
 use camino::Utf8Path;
 use camino::Utf8PathBuf;
 use camino_tempfile::Utf8TempDir;
-use regex::Regex;
 use std::collections::BTreeSet;
 use std::fs::File;
 use std::io;
@@ -74,8 +73,11 @@ pub enum IsolatedConfigdShutdownError {
 }
 
 impl IsolatedConfigd {
-    pub fn builder(service: impl Into<String>) -> IsolatedConfigdBuilder {
-        IsolatedConfigdBuilder { services: BTreeSet::from([service.into()]) }
+    pub fn builder(
+        service: impl Into<String>,
+    ) -> Result<IsolatedConfigdBuilder, InvalidFakeServiceName> {
+        let builder = IsolatedConfigdBuilder { services: BTreeSet::new() };
+        builder.add_service(service)
     }
 
     /// Path to the temporary directory containing the internal guts of this
@@ -157,9 +159,6 @@ pub enum IsolatedConfigdBuildError {
     #[error("failed to create temp directory")]
     CreateTempDir(#[source] io::Error),
 
-    #[error("invalid fake service name: {0:?}")]
-    InvalidFakeServiceName(String),
-
     #[error("failed creating fake service manifest file `{path}`")]
     FakeServiceManifestCreate {
         path: Utf8PathBuf,
@@ -205,6 +204,10 @@ pub enum IsolatedConfigdBuildError {
     SvcConfigdNoDoor { tempdir: Utf8TempDir },
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("invalid fake service name: {0:?}")]
+pub struct InvalidFakeServiceName(pub String);
+
 pub struct IsolatedConfigdBuilder {
     services: BTreeSet<String>,
 }
@@ -213,9 +216,25 @@ impl IsolatedConfigdBuilder {
     const DOOR_FILENAME: &str = "door";
     const REPO_FILENAME: &str = "repo";
 
-    pub fn add_service(mut self, service: impl Into<String>) -> Self {
-        self.services.insert(service.into());
-        self
+    pub fn add_service(
+        mut self,
+        service: impl Into<String>,
+    ) -> Result<Self, InvalidFakeServiceName> {
+        // Do some _very basic_ validation on `service` to ensure we don't have
+        // any XML injection. We only expect tests to want service names like
+        // "foo/bar/baz", so we just ensure that the name contains only
+        // alphanumbers plus `-`, `_`, and `/`.
+        let service = service.into();
+        if service.is_empty()
+            || !service.chars().all(|c| {
+                c.is_alphanumeric() || c == '-' || c == '_' || c == '/'
+            })
+        {
+            return Err(InvalidFakeServiceName(service.to_string()));
+        }
+
+        self.services.insert(service);
+        Ok(self)
     }
 
     pub fn build(self) -> Result<IsolatedConfigd, IsolatedConfigdBuildError> {
@@ -417,17 +436,6 @@ fn write_service_manifest(
     service: &str,
     path: &Utf8Path,
 ) -> Result<(), IsolatedConfigdBuildError> {
-    // Do some _very basic_ validation on `service` to ensure we don't have any
-    // XML injection. We only expect tests to want service names like
-    // "foo/bar/baz", so we just ensure that the name contains only alphanumbers
-    // plus `-`, `_`, and `/`.
-    let strict_service_name_check = Regex::new(r"^[-/[[:word:]]]+$").unwrap();
-    if !strict_service_name_check.is_match(service) {
-        return Err(IsolatedConfigdBuildError::InvalidFakeServiceName(
-            service.to_string(),
-        ));
-    }
-
     let f = File::create_new(path).map_err(|err| {
         IsolatedConfigdBuildError::FakeServiceManifestCreate {
             path: path.to_path_buf(),
