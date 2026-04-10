@@ -9,7 +9,7 @@
 //!
 //! * Command line flags to run `svc.configd` as not root, not daemonized, and
 //!   pointed to a different door and repository
-//! * Environment varialbes that tell `svccfg` to point to a different
+//! * Environment variables that tell `svccfg` to point to a different
 //!   `svc.configd` door and repository
 
 use camino::Utf8Path;
@@ -39,6 +39,8 @@ const SVC_CONFIGD_DOOR_CREATE_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub struct IsolatedConfigd {
     dir: Utf8TempDir,
+    // This is always `dir.join(IsolatedConfigdBuilder::DOOR_FILENAME)`, but we
+    // keep it cached here so we can return a `&Utf8Path` when asked.
     door_path: Utf8PathBuf,
     configd_child: Option<Child>,
 }
@@ -46,7 +48,7 @@ pub struct IsolatedConfigd {
 impl Drop for IsolatedConfigd {
     fn drop(&mut self) {
         // Attempt to shutdown, but ignore errors - we can't report them and
-        // don't to double panic.
+        // don't want to double panic.
         _ = self.shutdown_impl();
     }
 }
@@ -59,8 +61,8 @@ pub enum IsolatedConfigdRefreshError {
         #[source]
         err: io::Error,
     },
-    #[error("error during `svccfg -s {fmri} refresh` (exited {status}): {err}")]
-    SvccfgRefreshError { fmri: String, status: i32, err: String },
+    #[error("error during `svccfg -s {fmri} refresh`: {err}")]
+    SvccfgRefreshError { fmri: String, err: String },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -102,10 +104,9 @@ impl IsolatedConfigd {
                 fmri: fmri.to_owned(),
                 err,
             })?;
-        check_command_output(output).map_err(|(status, err)| {
+        check_command_output(output).map_err(|err| {
             IsolatedConfigdRefreshError::SvccfgRefreshError {
                 fmri: fmri.to_owned(),
-                status,
                 err,
             }
         })
@@ -139,8 +140,6 @@ impl IsolatedConfigd {
             Ok(()) => Ok(()),
             Err(mut child) => {
                 // SIGINT didn't work; use SIGKILL instead.
-                //
-                // We can't do much about errors here; just ignore them.
                 child
                     .kill()
                     .map_err(IsolatedConfigdShutdownError::ConfigdKill)?;
@@ -182,8 +181,8 @@ pub enum IsolatedConfigdBuildError {
         err: io::Error,
     },
 
-    #[error("error during `svccfg import {path}` (exited {status}): {err}")]
-    SvccfgImportError { path: Utf8PathBuf, status: i32, err: String },
+    #[error("error during `svccfg import {path}`: {err}")]
+    SvccfgImportError { path: Utf8PathBuf, err: String },
 
     #[error("failed to exec `svc.configd` pointed at the isolated repo")]
     SvcConfigdExec(#[source] io::Error),
@@ -255,10 +254,9 @@ impl IsolatedConfigdBuilder {
                     path: path.clone(),
                     err,
                 })?;
-            check_command_output(output).map_err(|(status, err)| {
+            check_command_output(output).map_err(|err| {
                 IsolatedConfigdBuildError::SvccfgImportError {
                     path: path.clone(),
-                    status,
                     err,
                 }
             })?;
@@ -347,33 +345,43 @@ impl IsolatedConfigdBuilder {
     }
 }
 
-fn check_command_output(output: Output) -> Result<(), (i32, String)> {
+fn check_command_output(output: Output) -> Result<(), String> {
     if output.status.success() {
-        Ok(())
-    } else {
-        let status = output.status.into_raw();
-        let mut err = String::new();
-        if !output.stdout.is_empty() {
-            err.push_str(&String::from_utf8_lossy(&output.stdout));
-        }
-        if !output.stderr.is_empty() {
-            if !err.is_empty() {
-                err.push('\n');
-            }
-            err.push_str(&String::from_utf8_lossy(&output.stderr));
-        }
-        if err.is_empty() {
-            err.push_str("(no output from stdout or stderr!)");
-        }
-        Err((status, err))
+        return Ok(());
     }
+
+    let mut err = match (output.status.code(), output.status.signal()) {
+        (Some(code), _) => format!("(exited {code}): "),
+        (_, Some(signal)) => format!("(exited with signal {signal}): "),
+        _ => String::new(),
+    };
+    if !output.stdout.is_empty() {
+        err.push_str(&String::from_utf8_lossy(&output.stdout));
+    }
+    if !output.stderr.is_empty() {
+        if !err.is_empty() {
+            err.push('\n');
+        }
+        err.push_str(&String::from_utf8_lossy(&output.stderr));
+    }
+    if err.is_empty() {
+        err.push_str("(no output from stdout or stderr!)");
+    }
+    Err(err)
 }
 
+// "Best effort" try to kill a child process via SIGINT:
+//
+// 1. Send `SIGINT`
+// 2. Check for exit status periodically until `wait_time`
+//
+// On any error or timeout elapsed, returns the `Child` handle; any errors are
+// swallowed.
 fn try_kill_via_sigint(
     mut child: Child,
     wait_time: Duration,
 ) -> Result<(), Child> {
-    // Sent SIGINT.
+    // Send SIGINT.
     let Ok(pid) = i32::try_from(child.id()) else {
         return Err(child);
     };
@@ -474,8 +482,17 @@ fn write_service_manifest(
 </service_bundle>
 "#
     )
-    .map_err(|err| IsolatedConfigdBuildError::FakeServiceManifestWrite {
-        path: path.to_path_buf(),
-        err,
+    .map_err(|err| {
+        IsolatedConfigdBuildError::FakeServiceManifestWrite {
+            path: path.to_path_buf(),
+            err,
+        }
+    })?;
+
+    f.flush().map_err(|err| {
+        IsolatedConfigdBuildError::FakeServiceManifestWrite {
+            path: path.to_path_buf(),
+            err,
+        }
     })
 }
