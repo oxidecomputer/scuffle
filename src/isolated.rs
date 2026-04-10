@@ -41,14 +41,15 @@ pub struct IsolatedConfigd {
     // This is always `dir.join(IsolatedConfigdBuilder::DOOR_FILENAME)`, but we
     // keep it cached here so we can return a `&Utf8Path` when asked.
     door_path: Utf8PathBuf,
-    configd_child: Option<Child>,
+    configd_child: KillOnDrop,
 }
 
 impl Drop for IsolatedConfigd {
     fn drop(&mut self) {
-        // Attempt to shutdown, but ignore errors - we can't report them and
-        // don't want to double panic.
-        _ = self.shutdown_impl();
+        // Ensure the child has shut down, but ignore errors - we can't report
+        // them and don't want to double panic. The child will also shutdown on
+        // drop, but we want to ensure that happens before we drop `dir`.
+        _ = self.configd_child.shutdown();
     }
 }
 
@@ -126,31 +127,7 @@ impl IsolatedConfigd {
     /// implementation will also attempt to shut it down (but any errors will
     /// not be visible).
     pub fn shutdown(mut self) -> Result<(), IsolatedConfigdShutdownError> {
-        self.shutdown_impl()
-    }
-
-    fn shutdown_impl(&mut self) -> Result<(), IsolatedConfigdShutdownError> {
-        // We might be called twice: once by `shutdown()` and once by `Drop`. If
-        // that happens, `Drop` ignores our return value anyway, so claim we
-        // succeeded. (We don't know whether the attempt that took
-        // `self.configd_child` out actually did succeed.)
-        let Some(child) = self.configd_child.take() else {
-            return Ok(());
-        };
-
-        match try_kill_via_sigint(child, SIGINT_SHUTDOWN_TIMEOUT) {
-            Ok(()) => Ok(()),
-            Err(mut child) => {
-                // SIGINT didn't work; use SIGKILL instead.
-                child
-                    .kill()
-                    .map_err(IsolatedConfigdShutdownError::ConfigdKill)?;
-                child.wait().map_err(
-                    IsolatedConfigdShutdownError::ConfigdWaitAfterKill,
-                )?;
-                Ok(())
-            }
-        }
+        self.configd_child.shutdown()
     }
 }
 
@@ -334,17 +311,14 @@ impl IsolatedConfigdBuilder {
 
         // Wait for `svc.configd` to create the door.
         let wait_for_door_start = Instant::now();
+        let mut configd_child = KillOnDrop(Some(configd_child));
         loop {
             if door_path.exists() {
-                return Ok(IsolatedConfigd {
-                    dir,
-                    door_path,
-                    configd_child: Some(configd_child),
-                });
+                return Ok(IsolatedConfigd { dir, door_path, configd_child });
             }
 
             // Is svc.configd still running?
-            if let Ok(Some(_exit_status)) = configd_child.try_wait() {
+            if configd_child.has_exited() {
                 return Err(IsolatedConfigdBuildError::SvcConfigdNoDoor {
                     tempdir: dir,
                 });
@@ -503,4 +477,52 @@ fn write_service_manifest(
             err,
         }
     })
+}
+
+struct KillOnDrop(Option<Child>);
+
+impl Drop for KillOnDrop {
+    fn drop(&mut self) {
+        // Attempt to shutdown, but ignore errors - we can't report them and
+        // don't want to double panic.
+        _ = self.shutdown();
+    }
+}
+
+impl KillOnDrop {
+    // Best effort "has this process exited" - only returns true if we get a
+    // definitive result that indicates it has, or if we've previously had
+    // `shutdown()` called on us. Returns false if it's still running or if we
+    // get an error from `try_wait()`.
+    fn has_exited(&mut self) -> bool {
+        let Some(child) = self.0.as_mut() else {
+            // if `child` is gone, we've shutdown already.
+            return true;
+        };
+        matches!(child.try_wait(), Ok(Some(_exit_status)))
+    }
+
+    fn shutdown(&mut self) -> Result<(), IsolatedConfigdShutdownError> {
+        // We might be called twice: once by `shutdown()` and once by
+        // `Drop`. If that happens, `Drop` ignores our return value anyway,
+        // so claim we succeeded. (We don't know whether the attempt that
+        // took `self.configd_child` out actually did succeed.)
+        let Some(child) = self.0.take() else {
+            return Ok(());
+        };
+
+        match try_kill_via_sigint(child, SIGINT_SHUTDOWN_TIMEOUT) {
+            Ok(()) => Ok(()),
+            Err(mut child) => {
+                // SIGINT didn't work; use SIGKILL instead.
+                child
+                    .kill()
+                    .map_err(IsolatedConfigdShutdownError::ConfigdKill)?;
+                child.wait().map_err(
+                    IsolatedConfigdShutdownError::ConfigdWaitAfterKill,
+                )?;
+                Ok(())
+            }
+        }
+    }
 }
