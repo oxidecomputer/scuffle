@@ -115,7 +115,7 @@ impl IsolatedConfigd {
         })
     }
 
-    pub(crate) fn door_path(&self) -> &Utf8Path {
+    pub fn door_path(&self) -> &Utf8Path {
         &self.door_path
     }
 
