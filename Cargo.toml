@@ -1,0 +1,23 @@
+[package]
+name = "scuffle"
+version = "0.1.0"
+edition = "2024"
+license = "MPL-2.0"
+
+[dependencies]
+libc = "0.2"
+thiserror = "2.0"
+
+# testing-only dependencies (spinning up an isolated `svc.configd`)
+camino = { version = "1.2.2", optional = true }
+camino-tempfile = { version = "1.4.1", optional = true }
+
+[dev-dependencies]
+camino = "1.2.2"
+camino-tempfile = "1.4.1"
+
+[features]
+testing = [
+    "dep:camino",
+    "dep:camino-tempfile",
+]
