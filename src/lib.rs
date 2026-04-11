@@ -18,4 +18,5 @@ pub use value::CreateValueError;
 pub use value::GetValueError;
 pub use value::SetValueError;
 pub use value::Value;
+pub use value::ValueRef;
 pub use value::ValueDisplaySmf;

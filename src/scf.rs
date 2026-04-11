@@ -5,7 +5,7 @@
 use crate::CreateValueError;
 use crate::LibscfError;
 use crate::SetValueError;
-use crate::Value;
+use crate::ValueRef;
 use crate::value::ScfValue;
 use std::ffi::CStr;
 use std::ffi::CString;
@@ -184,7 +184,7 @@ impl<'a> Scf<'a> {
                         err,
                     }
                 })?;
-                value.set(&Value::AString(zonename.into())).map_err(|err| {
+                value.set(ValueRef::AString(zonename)).map_err(|err| {
                     ScfError::SetZoneName { zonename: zonename.to_owned(), err }
                 })?;
                 let ret = unsafe {
@@ -210,7 +210,7 @@ impl<'a> Scf<'a> {
                         err,
                     }
                 })?;
-                value.set(&Value::AString(door_path.into())).map_err(
+                value.set(ValueRef::AString(door_path)).map_err(
                     |err| ScfError::SetDoorPath {
                         door_path: door_path.to_owned(),
                         err,

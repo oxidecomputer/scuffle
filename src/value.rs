@@ -11,7 +11,6 @@ use num_traits::FromPrimitive;
 use oxnet::IpNet;
 use oxnet::Ipv4Net;
 use oxnet::Ipv6Net;
-use std::borrow::Cow;
 use std::cell::Cell;
 use std::cell::RefCell;
 use std::ffi::CStr;
@@ -39,9 +38,12 @@ pub struct CreateValueError(#[source] pub LibscfError);
 
 #[derive(Debug, thiserror::Error)]
 pub enum SetValueError {
-    #[error("failed to set value {value:?} on internal libscf value")]
+    #[error(
+        "failed to set value `{}` on internal libscf value",
+        value.display_smf(),
+    )]
     Set {
-        value: Value<'static>,
+        value: Value,
         #[source]
         err: LibscfError,
     },
@@ -112,8 +114,7 @@ pub enum GetValueError {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(any(test, feature = "testing"), derive(Arbitrary))]
-#[cfg_attr(any(test, feature = "testing"), arbitrary(bound('a: 'static)))]
-pub enum Value<'a> {
+pub enum Value {
     Bool(bool),
     Count(u64),
     Integer(i64),
@@ -123,30 +124,34 @@ pub enum Value<'a> {
         ))]
         DateTime<Utc>,
     ),
-    AString(Cow<'a, str>),
-    Opaque(Cow<'a, [u8]>),
-    UString(Cow<'a, str>),
+    AString(String),
+    Opaque(Vec<u8>),
+    UString(String),
     Uri(
-        // Trying to send an invalid URI deadlocks libscf. Generate benign
-        // arbitrary values. TODO link to issue
-        #[cfg_attr(any(test, feature = "testing"), strategy(
-            "[[:alpha:]][[:alnum:]]*".prop_map(Cow::Owned)
-        ))]
-        Cow<'a, str>,
+        // We want to generate URIs that libscf considers valid. Instead of
+        // trying to be fancy here, just generate plain-looking alphanumeric
+        // strings.
+        #[cfg_attr(
+            any(test, feature = "testing"),
+            strategy("[[:alpha:]][[:alnum:]]*")
+        )]
+        String,
     ),
     Fmri(
-        // Trying to send an invalid FMRI deadlocks libscf. Generate benign
-        // arbitrary values. TODO link to issue
-        #[cfg_attr(any(test, feature = "testing"), strategy(
-            "[[:alpha:]][[:alnum:]]*".prop_map(Cow::Owned)
-        ))]
-        Cow<'a, str>,
+        // We want to generate FMRIs that libscf considers valid. Instead of
+        // trying to be fancy here, just generate plain-looking alphanumeric
+        // strings.
+        #[cfg_attr(
+            any(test, feature = "testing"),
+            strategy("[[:alpha:]][[:alnum:]]*")
+        )]
+        String,
     ),
     // Unlike URI and FMRI, libscf does essentially no validation against HOST
     // or HOSTNAME types (only that they're valid UTF8). We don't need custom
     // strategies for them.
-    Host(Cow<'a, str>),
-    Hostname(Cow<'a, str>),
+    Host(String),
+    Hostname(String),
     NetAddrV4(Ipv4Addr),
     NetV4(
         #[cfg_attr(any(test, feature = "testing"), strategy(
@@ -176,60 +181,98 @@ pub enum Value<'a> {
     ),
 }
 
-impl<'a> Value<'a> {
-    pub fn to_static_value(&self) -> Value<'static> {
+impl Value {
+    pub fn as_value_ref(&self) -> ValueRef<'_> {
         match self {
-            Value::Bool(b) => Value::Bool(*b),
-            Value::Count(c) => Value::Count(*c),
-            Value::Integer(i) => Value::Integer(*i),
-            Value::Time(ts) => Value::Time(*ts),
-            Value::AString(cow) => {
-                Value::AString(Cow::Owned(cow.clone().into_owned()))
-            }
-            Value::Opaque(cow) => {
-                Value::Opaque(Cow::Owned(cow.clone().into_owned()))
-            }
-            Value::UString(cow) => {
-                Value::UString(Cow::Owned(cow.clone().into_owned()))
-            }
-            Value::Uri(cow) => Value::Uri(Cow::Owned(cow.clone().into_owned())),
-            Value::Fmri(cow) => {
-                Value::Fmri(Cow::Owned(cow.clone().into_owned()))
-            }
-            Value::Host(cow) => {
-                Value::Host(Cow::Owned(cow.clone().into_owned()))
-            }
-            Value::Hostname(cow) => {
-                Value::Hostname(Cow::Owned(cow.clone().into_owned()))
-            }
-            Value::NetAddrV4(ip) => Value::NetAddrV4(*ip),
-            Value::NetV4(ipnet) => Value::NetV4(*ipnet),
-            Value::NetAddrV6(ip) => Value::NetAddrV6(*ip),
-            Value::NetV6(ipnet) => Value::NetV6(*ipnet),
-            Value::NetAddr(ip) => Value::NetAddr(*ip),
-            Value::Net(ipnet) => Value::Net(*ipnet),
+            Self::Bool(b) => ValueRef::Bool(*b),
+            Self::Count(c) => ValueRef::Count(*c),
+            Self::Integer(i) => ValueRef::Integer(*i),
+            Self::Time(ts) => ValueRef::Time(*ts),
+            Self::AString(s) => ValueRef::AString(s),
+            Self::Opaque(data) => ValueRef::Opaque(data),
+            Self::UString(s) => ValueRef::UString(s),
+            Self::Uri(s) => ValueRef::Uri(s),
+            Self::Fmri(s) => ValueRef::Fmri(s),
+            Self::Host(s) => ValueRef::Host(s),
+            Self::Hostname(s) => ValueRef::Hostname(s),
+            Self::NetAddrV4(ip) => ValueRef::NetAddrV4(*ip),
+            Self::NetV4(ip) => ValueRef::NetV4(*ip),
+            Self::NetAddrV6(ip) => ValueRef::NetAddrV6(*ip),
+            Self::NetV6(ip) => ValueRef::NetV6(*ip),
+            Self::NetAddr(ip) => ValueRef::NetAddr(*ip),
+            Self::Net(ip) => ValueRef::Net(*ip),
         }
     }
-}
 
-impl Value<'_> {
     /// Returns a displayable type that formats values consistently with how SMF
     /// would display them as strings (e.g., `Opaque` values are hex-encoded;
     /// `Time` values are `{seconds}.{nanoseconds}`).
     pub fn display_smf(&self) -> ValueDisplaySmf<'_> {
-        ValueDisplaySmf(self)
+        ValueDisplaySmf(self.as_value_ref())
     }
 }
 
-pub struct ValueDisplaySmf<'a>(&'a Value<'a>);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ValueRef<'a> {
+    Bool(bool),
+    Count(u64),
+    Integer(i64),
+    Time(DateTime<Utc>),
+    AString(&'a str),
+    Opaque(&'a [u8]),
+    UString(&'a str),
+    Uri(&'a str),
+    Fmri(&'a str),
+    Host(&'a str),
+    Hostname(&'a str),
+    NetAddrV4(Ipv4Addr),
+    NetV4(Ipv4Net),
+    NetAddrV6(Ipv6Addr),
+    NetV6(Ipv6Net),
+    NetAddr(IpAddr),
+    Net(IpNet),
+}
+
+impl<'a> ValueRef<'a> {
+    pub fn to_value(&self) -> Value {
+        match self {
+            Self::Bool(b) => Value::Bool(*b),
+            Self::Count(c) => Value::Count(*c),
+            Self::Integer(i) => Value::Integer(*i),
+            Self::Time(ts) => Value::Time(*ts),
+            Self::AString(s) => Value::AString(s.to_string()),
+            Self::Opaque(v) => Value::Opaque(v.to_vec()),
+            Self::UString(s) => Value::UString(s.to_string()),
+            Self::Uri(u) => Value::Uri(u.to_string()),
+            Self::Fmri(f) => Value::Fmri(f.to_string()),
+            Self::Host(h) => Value::Host(h.to_string()),
+            Self::Hostname(h) => Value::Hostname(h.to_string()),
+            Self::NetAddrV4(ip) => Value::NetAddrV4(*ip),
+            Self::NetV4(ipnet) => Value::NetV4(*ipnet),
+            Self::NetAddrV6(ip) => Value::NetAddrV6(*ip),
+            Self::NetV6(ipnet) => Value::NetV6(*ipnet),
+            Self::NetAddr(ip) => Value::NetAddr(*ip),
+            Self::Net(ipnet) => Value::Net(*ipnet),
+        }
+    }
+
+    /// Returns a displayable type that formats values consistently with how SMF
+    /// would display them as strings (e.g., `Opaque` values are hex-encoded;
+    /// `Time` values are `{seconds}.{nanoseconds}`).
+    pub fn display_smf(&self) -> ValueDisplaySmf<'a> {
+        ValueDisplaySmf(*self)
+    }
+}
+
+pub struct ValueDisplaySmf<'a>(ValueRef<'a>);
 
 impl fmt::Display for ValueDisplaySmf<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
-            Value::Bool(b) => b.fmt(f),
-            Value::Count(n) => n.fmt(f),
-            Value::Integer(i) => i.fmt(f),
-            Value::Time(ts) => {
+            ValueRef::Bool(b) => b.fmt(f),
+            ValueRef::Count(n) => n.fmt(f),
+            ValueRef::Integer(i) => i.fmt(f),
+            ValueRef::Time(ts) => {
                 let secs = ts.timestamp();
                 let nanosecs = ts.timestamp_subsec_nanos();
                 if nanosecs == 0 {
@@ -238,24 +281,24 @@ impl fmt::Display for ValueDisplaySmf<'_> {
                     write!(f, "{secs}.{nanosecs:09}")
                 }
             }
-            Value::Opaque(cow) => {
-                for b in cow.as_ref() {
+            ValueRef::Opaque(data) => {
+                for b in data {
                     write!(f, "{b:02x}")?;
                 }
                 Ok(())
             }
-            Value::AString(cow)
-            | Value::UString(cow)
-            | Value::Uri(cow)
-            | Value::Fmri(cow)
-            | Value::Host(cow)
-            | Value::Hostname(cow) => cow.fmt(f),
-            Value::NetAddrV4(ip) => ip.fmt(f),
-            Value::NetV4(ip) => ip.fmt(f),
-            Value::NetAddrV6(ip) => ip.fmt(f),
-            Value::NetV6(ip) => ip.fmt(f),
-            Value::NetAddr(ip) => ip.fmt(f),
-            Value::Net(ip) => ip.fmt(f),
+            ValueRef::AString(s)
+            | ValueRef::UString(s)
+            | ValueRef::Uri(s)
+            | ValueRef::Fmri(s)
+            | ValueRef::Host(s)
+            | ValueRef::Hostname(s) => s.fmt(f),
+            ValueRef::NetAddrV4(ip) => ip.fmt(f),
+            ValueRef::NetV4(ip) => ip.fmt(f),
+            ValueRef::NetAddrV6(ip) => ip.fmt(f),
+            ValueRef::NetV6(ip) => ip.fmt(f),
+            ValueRef::NetAddr(ip) => ip.fmt(f),
+            ValueRef::Net(ip) => ip.fmt(f),
         }
     }
 }
@@ -287,7 +330,7 @@ impl ScfValue<'_> {
         &self.handle
     }
 
-    pub(crate) fn get(&self) -> Result<Value<'static>, GetValueError> {
+    pub(crate) fn get(&self) -> Result<Value, GetValueError> {
         // Helper function for all the scf types for which we have to fetch
         // strings (and possibly then do additional parsing). This handles
         // extracting a Rust string from what libscf writes to `buf`.
@@ -379,32 +422,32 @@ impl ScfValue<'_> {
                 if sz > buf.len() {
                     Err(GetValueError::GetOpaqueOutOfBounds(sz))
                 } else {
-                    Ok(Value::Opaque(buf[..sz].to_vec().into()))
+                    Ok(Value::Opaque(buf[..sz].to_vec()))
                 }
             }),
             scf_type_t::SCF_TYPE_ASTRING => with_scf_value_buf(|buf| {
                 let s = get_as_string(ptr, buf)?;
-                Ok(Value::AString(s.to_owned().into()))
+                Ok(Value::AString(s.to_owned()))
             }),
             scf_type_t::SCF_TYPE_USTRING => with_scf_value_buf(|buf| {
                 let s = get_as_string(ptr, buf)?;
-                Ok(Value::UString(s.to_owned().into()))
+                Ok(Value::UString(s.to_owned()))
             }),
             scf_type_t::SCF_TYPE_URI => with_scf_value_buf(|buf| {
                 let s = get_as_string(ptr, buf)?;
-                Ok(Value::Uri(s.to_owned().into()))
+                Ok(Value::Uri(s.to_owned()))
             }),
             scf_type_t::SCF_TYPE_FMRI => with_scf_value_buf(|buf| {
                 let s = get_as_string(ptr, buf)?;
-                Ok(Value::Fmri(s.to_owned().into()))
+                Ok(Value::Fmri(s.to_owned()))
             }),
             scf_type_t::SCF_TYPE_HOST => with_scf_value_buf(|buf| {
                 let s = get_as_string(ptr, buf)?;
-                Ok(Value::Host(s.to_owned().into()))
+                Ok(Value::Host(s.to_owned()))
             }),
             scf_type_t::SCF_TYPE_HOSTNAME => with_scf_value_buf(|buf| {
                 let s = get_as_string(ptr, buf)?;
-                Ok(Value::Hostname(s.to_owned().into()))
+                Ok(Value::Hostname(s.to_owned()))
             }),
             scf_type_t::SCF_TYPE_NET_ADDR_V4 => with_scf_value_buf(|buf| {
                 let s = get_as_string(ptr, buf)?;
@@ -443,7 +486,7 @@ impl ScfValue<'_> {
 
     pub(crate) fn set(
         &mut self,
-        value: &Value<'_>,
+        value: ValueRef<'_>,
     ) -> Result<(), SetValueError> {
         // Wrapper around `libscf_sys::scf_value_set_from_string()` used by many
         // of the variants of `Value` in the match below.
@@ -472,26 +515,26 @@ impl ScfValue<'_> {
             use scf_type_t::*;
             let ptr = self.handle.as_ptr();
             match value {
-                Value::Bool(b) => {
+                ValueRef::Bool(b) => {
                     () = unsafe {
-                        libscf_sys::scf_value_set_boolean(ptr, u8::from(*b))
+                        libscf_sys::scf_value_set_boolean(ptr, u8::from(b))
                     };
                     Ok(())
                 }
-                Value::Count(n) => {
-                    () = unsafe { libscf_sys::scf_value_set_count(ptr, *n) };
+                ValueRef::Count(n) => {
+                    () = unsafe { libscf_sys::scf_value_set_count(ptr, n) };
                     Ok(())
                 }
-                Value::Integer(i) => {
-                    () = unsafe { libscf_sys::scf_value_set_integer(ptr, *i) };
+                ValueRef::Integer(i) => {
+                    () = unsafe { libscf_sys::scf_value_set_integer(ptr, i) };
                     Ok(())
                 }
-                Value::Time(ts) => {
-                    let seconds = ts.timestamp();
-                    let nanos = ts.timestamp_subsec_nanos();
+                ValueRef::Time(timestamp) => {
+                    let seconds = timestamp.timestamp();
+                    let nanos = timestamp.timestamp_subsec_nanos();
                     let nanos = i32::try_from(nanos).map_err(|_| {
                         SetValueError::InvalidTimestampNanos {
-                            timestamp: *ts,
+                            timestamp,
                             seconds,
                             nanos,
                         }
@@ -500,11 +543,11 @@ impl ScfValue<'_> {
                         libscf_sys::scf_value_set_time(ptr, seconds, nanos)
                     })
                 }
-                Value::Opaque(cow) => LibscfError::from_ret(unsafe {
+                ValueRef::Opaque(data) => LibscfError::from_ret(unsafe {
                     libscf_sys::scf_value_set_opaque(
                         ptr,
-                        cow.as_ptr().cast::<libc::c_void>(),
-                        cow.len(),
+                        data.as_ptr().cast::<libc::c_void>(),
+                        data.len(),
                     )
                 }),
                 // TODO-correctness There are explicit functions for setting
@@ -512,42 +555,44 @@ impl ScfValue<'_> {
                 // bindings are incorrect, so instead we to through "set from
                 // string" for them like the remainder of the fancy types.
                 // See <https://github.com/illumos/libscf-sys/issues/1>.
-                Value::AString(cow) => {
-                    set_from_string(ptr, SCF_TYPE_ASTRING, cow)?
+                ValueRef::AString(s) => {
+                    set_from_string(ptr, SCF_TYPE_ASTRING, s)?
                 }
-                Value::UString(cow) => {
-                    set_from_string(ptr, SCF_TYPE_USTRING, cow)?
+                ValueRef::UString(s) => {
+                    set_from_string(ptr, SCF_TYPE_USTRING, s)?
                 }
-                Value::Uri(cow) => set_from_string(ptr, SCF_TYPE_URI, cow)?,
-                Value::Fmri(cow) => set_from_string(ptr, SCF_TYPE_FMRI, cow)?,
-                Value::Host(cow) => set_from_string(ptr, SCF_TYPE_HOST, cow)?,
-                Value::Hostname(cow) => {
-                    set_from_string(ptr, SCF_TYPE_HOSTNAME, cow)?
+                ValueRef::Uri(s) => set_from_string(ptr, SCF_TYPE_URI, s)?,
+                ValueRef::Fmri(s) => {
+                    set_from_string(ptr, SCF_TYPE_FMRI, s)?
                 }
-                Value::NetAddrV4(ip) => {
+                ValueRef::Host(s) => {
+                    set_from_string(ptr, SCF_TYPE_HOST, s)?
+                }
+                ValueRef::Hostname(s) => {
+                    set_from_string(ptr, SCF_TYPE_HOSTNAME, s)?
+                }
+                ValueRef::NetAddrV4(ip) => {
                     set_from_string(ptr, SCF_TYPE_NET_ADDR_V4, &ip.to_string())?
                 }
-                Value::NetV4(ip) => {
+                ValueRef::NetV4(ip) => {
                     set_from_string(ptr, SCF_TYPE_NET_ADDR_V4, &ip.to_string())?
                 }
-                Value::NetAddrV6(ip) => {
+                ValueRef::NetAddrV6(ip) => {
                     set_from_string(ptr, SCF_TYPE_NET_ADDR_V6, &ip.to_string())?
                 }
-                Value::NetV6(ip) => {
+                ValueRef::NetV6(ip) => {
                     set_from_string(ptr, SCF_TYPE_NET_ADDR_V6, &ip.to_string())?
                 }
-                Value::NetAddr(ip) => {
+                ValueRef::NetAddr(ip) => {
                     set_from_string(ptr, SCF_TYPE_NET_ADDR, &ip.to_string())?
                 }
-                Value::Net(ipnet) => {
+                ValueRef::Net(ipnet) => {
                     set_from_string(ptr, SCF_TYPE_NET_ADDR, &ipnet.to_string())?
                 }
             }
         };
-        result.map_err(|err| SetValueError::Set {
-            value: value.to_static_value(),
-            err,
-        })
+        result
+            .map_err(|err| SetValueError::Set { value: value.to_value(), err })
     }
 }
 
@@ -612,9 +657,9 @@ mod tests {
             IsolatedConfigd::builder("test-svc").unwrap().build().unwrap();
         let scf = Scf::connect_isolated(&isolated).unwrap();
 
-        proptest!(|(val: Value<'static>)| {
+        proptest!(|(val: Value)| {
             let mut sval = ScfValue::new(&scf).unwrap();
-            sval.set(&val).expect("set value");
+            sval.set(val.as_value_ref()).expect("set value");
             let roundtrip = sval.get().expect("got value");
             assert_eq!(roundtrip, val);
         });
@@ -626,11 +671,11 @@ mod tests {
             IsolatedConfigd::builder("test-svc").unwrap().build().unwrap();
         let scf = Scf::connect_isolated(&isolated).unwrap();
 
-        proptest!(|(val: Value<'static>)| {
+        proptest!(|(val: Value)| {
             let displayed = val.display_smf().to_string();
 
             let mut sval = ScfValue::new(&scf).unwrap();
-            sval.set(&val).expect("set value");
+            sval.set(val.as_value_ref()).expect("set value");
             let expected = scf_value_as_string(&sval);
 
             assert_eq!(displayed, expected);
