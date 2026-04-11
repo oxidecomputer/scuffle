@@ -7,12 +7,13 @@ license = "MPL-2.0"
 [dependencies]
 chrono = "0.4"
 libc = "0.2"
-libscf-sys = "1.1"
+# TODO upstream this
+libscf-sys = { git = "https://github.com/jgallagher/libscf-sys", branch = "john/fix-signatures" }
 num-traits = "0.2"
 oxnet = "0.1.4"
 thiserror = "2.0"
 
-# testing-only dependencies (spinning up an isolated `svc.configd`)
+# testing-only dependencies
 camino = { version = "1.2.2", optional = true }
 camino-tempfile = { version = "1.4.1", optional = true }
 

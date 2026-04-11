@@ -109,4 +109,8 @@ impl LibscfError {
     pub(crate) fn from_ret(ret: libc::c_int) -> Result<(), Self> {
         if ret == 0 { Ok(()) } else { Err(Self::last()) }
     }
+
+    pub(crate) fn from_ssize(ret: libc::ssize_t) -> Result<usize, Self> {
+        usize::try_from(ret).map_err(|_| Self::last())
+    }
 }

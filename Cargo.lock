@@ -341,8 +341,7 @@ checksum = "48f5d2a454e16a5ea0f4ced81bd44e4cfc7bd3a507b61887c99fd3538b28e4af"
 [[package]]
 name = "libscf-sys"
 version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12f02d0eda38e8cc453c5ec5d49945545d8d9eb0e59cb2ce4152ba6518f373e7"
+source = "git+https://github.com/jgallagher/libscf-sys?branch=john%2Ffix-signatures#1305f3d4a8e6ba26dc1bc6fe153a6901df083067"
 dependencies = [
  "libc",
  "num-derive",
