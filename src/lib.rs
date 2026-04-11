@@ -15,4 +15,5 @@ pub use scf::Scf;
 pub use scf::ScfError;
 pub use scf::Zone;
 pub use value::Value;
+pub use value::ValueDisplaySmf;
 pub use value::ValueError;

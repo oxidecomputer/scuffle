@@ -13,6 +13,7 @@ use oxnet::Ipv6Net;
 use std::borrow::Cow;
 use std::ffi::CString;
 use std::ffi::NulError;
+use std::fmt;
 use std::marker::PhantomData;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
@@ -97,6 +98,54 @@ impl<'a> Value<'a> {
             Value::NetV6(ipnet) => Value::NetV6(*ipnet),
             Value::NetAddr(ip) => Value::NetAddr(*ip),
             Value::Net(ipnet) => Value::Net(*ipnet),
+        }
+    }
+}
+
+impl Value<'_> {
+    /// Returns a displayable type that formats values consistently with how SMF
+    /// would display them as strings (e.g., `Opaque` values are hex-encoded;
+    /// `Time` values are `{seconds}.{nanoseconds}`).
+    pub fn display_smf(&self) -> ValueDisplaySmf<'_> {
+        ValueDisplaySmf(self)
+    }
+}
+
+pub struct ValueDisplaySmf<'a>(&'a Value<'a>);
+
+impl fmt::Display for ValueDisplaySmf<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            Value::Bool(b) => b.fmt(f),
+            Value::Count(n) => n.fmt(f),
+            Value::Integer(i) => i.fmt(f),
+            Value::Time(ts) => {
+                let secs = ts.timestamp();
+                let nanosecs = ts.timestamp_subsec_nanos();
+                if nanosecs == 0 {
+                    secs.fmt(f)
+                } else {
+                    write!(f, "{secs}.{nanosecs:09}")
+                }
+            }
+            Value::Opaque(cow) => {
+                for b in cow.as_ref() {
+                    write!(f, "{b:02x}")?;
+                }
+                Ok(())
+            }
+            Value::AString(cow)
+            | Value::UString(cow)
+            | Value::Uri(cow)
+            | Value::Fmri(cow)
+            | Value::Host(cow)
+            | Value::Hostname(cow) => cow.fmt(f),
+            Value::NetAddrV4(ip) => ip.fmt(f),
+            Value::NetV4(ip) => ip.fmt(f),
+            Value::NetAddrV6(ip) => ip.fmt(f),
+            Value::NetV6(ip) => ip.fmt(f),
+            Value::NetAddr(ip) => ip.fmt(f),
+            Value::Net(ip) => ip.fmt(f),
         }
     }
 }
