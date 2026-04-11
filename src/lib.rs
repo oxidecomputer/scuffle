@@ -4,6 +4,9 @@
 
 mod error;
 mod scf;
+mod scope;
+mod service;
+mod utf8cstring;
 mod value;
 
 #[cfg(any(test, feature = "testing"))]
@@ -14,9 +17,13 @@ pub use scf::RefreshError;
 pub use scf::Scf;
 pub use scf::ScfError;
 pub use scf::Zone;
+pub use scope::Scope;
+pub use scope::ScopeError;
+pub use service::Service;
+pub use service::ServiceError;
 pub use value::CreateValueError;
 pub use value::GetValueError;
 pub use value::SetValueError;
 pub use value::Value;
-pub use value::ValueRef;
 pub use value::ValueDisplaySmf;
+pub use value::ValueRef;

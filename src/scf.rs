@@ -4,6 +4,8 @@
 
 use crate::CreateValueError;
 use crate::LibscfError;
+use crate::Scope;
+use crate::ScopeError;
 use crate::SetValueError;
 use crate::ValueRef;
 use crate::value::ScfValue;
@@ -210,12 +212,12 @@ impl<'a> Scf<'a> {
                         err,
                     }
                 })?;
-                value.set(ValueRef::AString(door_path)).map_err(
-                    |err| ScfError::SetDoorPath {
+                value.set(ValueRef::AString(door_path)).map_err(|err| {
+                    ScfError::SetDoorPath {
                         door_path: door_path.to_owned(),
                         err,
-                    },
-                )?;
+                    }
+                })?;
                 let ret = unsafe {
                     libscf_sys::scf_handle_decorate(
                         scf.handle.as_ptr(),
@@ -239,8 +241,8 @@ impl<'a> Scf<'a> {
         Ok(scf)
     }
 
-    pub(crate) fn handle(&self) -> &NonNull<libscf_sys::scf_handle_t> {
-        &self.handle
+    pub fn scope_local(&self) -> Result<Scope<'_>, ScopeError> {
+        Scope::new_local(self)
     }
 
     pub fn refresh(&self, fmri: &str) -> Result<(), RefreshError> {
@@ -252,6 +254,10 @@ impl<'a> Scf<'a> {
 
     pub(crate) fn refresh_cstr(&self, fmri: &CStr) -> Result<(), RefreshError> {
         self.refresher.refresh(fmri)
+    }
+
+    pub(crate) fn handle(&self) -> &NonNull<libscf_sys::scf_handle_t> {
+        &self.handle
     }
 }
 
