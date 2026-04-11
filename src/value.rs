@@ -21,10 +21,11 @@ use std::net::Ipv6Addr;
 use std::ptr::NonNull;
 
 #[derive(Debug, thiserror::Error)]
-pub enum ValueError {
-    #[error("failed to create value")]
-    Create(#[source] LibscfError),
+#[error("failed to create value")]
+pub struct CreateValueError(#[source] pub LibscfError);
 
+#[derive(Debug, thiserror::Error)]
+pub enum SetValueError {
     #[error("failed to set value {value:?} on internal libscf value")]
     Set {
         value: Value<'static>,
@@ -164,10 +165,11 @@ impl Drop for ScfValue<'_> {
 }
 
 impl<'scf> ScfValue<'scf> {
-    pub(crate) fn new(scf: &'scf Scf) -> Result<Self, ValueError> {
+    pub(crate) fn new(scf: &'scf Scf) -> Result<Self, CreateValueError> {
         let value =
             unsafe { libscf_sys::scf_value_create(scf.handle().as_ptr()) };
-        let value = LibscfError::from_ptr(value).map_err(ValueError::Create)?;
+        let value =
+            LibscfError::from_ptr(value).map_err(CreateValueError)?;
         Ok(Self { _scf: PhantomData, handle: value })
     }
 }
@@ -177,7 +179,10 @@ impl ScfValue<'_> {
         &self.handle
     }
 
-    pub(crate) fn set(&mut self, value: &Value<'_>) -> Result<(), ValueError> {
+    pub(crate) fn set(
+        &mut self,
+        value: &Value<'_>,
+    ) -> Result<(), SetValueError> {
         // Wrapper around `libscf_sys::scf_value_set_from_string()` used by many
         // of the variants of `Value` in the match below.
         //
@@ -188,9 +193,9 @@ impl ScfValue<'_> {
             ptr: *mut libscf_sys::scf_value_t,
             ty: scf_type_t,
             s: &str,
-        ) -> Result<Result<(), LibscfError>, ValueError> {
+        ) -> Result<Result<(), LibscfError>, SetValueError> {
             let s = CString::new(s).map_err(|err| {
-                ValueError::InvalidString { value: s.to_owned(), err }
+                SetValueError::InvalidString { value: s.to_owned(), err }
             })?;
             let ret = unsafe {
                 libscf_sys::scf_value_set_from_string(ptr, ty, s.as_ptr())
@@ -223,7 +228,7 @@ impl ScfValue<'_> {
                     let seconds = ts.timestamp();
                     let nanos = ts.timestamp_subsec_nanos();
                     let nanos = i32::try_from(nanos).map_err(|_| {
-                        ValueError::InvalidTimestampNanos {
+                        SetValueError::InvalidTimestampNanos {
                             timestamp: *ts,
                             seconds,
                             nanos,
@@ -277,7 +282,7 @@ impl ScfValue<'_> {
                 }
             }
         };
-        result.map_err(|err| ValueError::Set {
+        result.map_err(|err| SetValueError::Set {
             value: value.to_static_value(),
             err,
         })

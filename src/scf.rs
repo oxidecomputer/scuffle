@@ -2,9 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use crate::CreateValueError;
 use crate::LibscfError;
+use crate::SetValueError;
 use crate::Value;
-use crate::ValueError;
 use crate::value::ScfValue;
 use std::ffi::CStr;
 use std::ffi::CString;
@@ -32,14 +33,20 @@ pub enum ScfError {
     #[error("error binding scf handle")]
     HandleBind(#[source] LibscfError),
 
-    #[error(transparent)]
-    CreateValue(ValueError),
+    #[error(
+        "error creating zone name value for zone {zonename} during connect"
+    )]
+    CreateZoneName {
+        zonename: String,
+        #[source]
+        err: CreateValueError,
+    },
 
     #[error("error setting zone name to {zonename} during connect")]
     SetZoneName {
         zonename: String,
         #[source]
-        err: ValueError,
+        err: SetValueError,
     },
 
     #[error("error setting decoration to attach to zone {zonename}")]
@@ -49,13 +56,23 @@ pub enum ScfError {
         err: LibscfError,
     },
 
+    #[cfg(any(test, feature = "testing"))]
+    #[error("error creating door path value to {door_path} during connect")]
+    CreateDoorPath {
+        door_path: String,
+        #[source]
+        err: CreateValueError,
+    },
+
+    #[cfg(any(test, feature = "testing"))]
     #[error("error setting door path to {door_path} during connect")]
     SetDoorPath {
         door_path: String,
         #[source]
-        err: ValueError,
+        err: SetValueError,
     },
 
+    #[cfg(any(test, feature = "testing"))]
     #[error("error setting decoration to connect to door {door_path}")]
     SetDecorationDoorPath {
         door_path: String,
@@ -161,8 +178,12 @@ impl<'a> Scf<'a> {
             }
 
             ConnectMode::Zone(zonename) => {
-                let mut value =
-                    ScfValue::new(&scf).map_err(ScfError::CreateValue)?;
+                let mut value = ScfValue::new(&scf).map_err(|err| {
+                    ScfError::CreateZoneName {
+                        zonename: zonename.to_owned(),
+                        err,
+                    }
+                })?;
                 value.set(&Value::AString(zonename.into())).map_err(|err| {
                     ScfError::SetZoneName { zonename: zonename.to_owned(), err }
                 })?;
@@ -183,8 +204,12 @@ impl<'a> Scf<'a> {
 
             #[cfg(any(test, feature = "testing"))]
             ConnectMode::DoorPath(door_path) => {
-                let mut value =
-                    ScfValue::new(&scf).map_err(ScfError::CreateValue)?;
+                let mut value = ScfValue::new(&scf).map_err(|err| {
+                    ScfError::CreateDoorPath {
+                        door_path: door_path.to_owned(),
+                        err,
+                    }
+                })?;
                 value.set(&Value::AString(door_path.into())).map_err(
                     |err| ScfError::SetDoorPath {
                         door_path: door_path.to_owned(),
