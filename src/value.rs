@@ -155,27 +155,21 @@ pub enum Value {
     NetAddrV4(Ipv4Addr),
     NetV4(
         #[cfg_attr(any(test, feature = "testing"), strategy(
-            (any::<Ipv4Addr>(), 0..=32_u8)
-                .prop_map(|(ip, net)| Ipv4Net::new(ip, net).unwrap())
+            any::<arb_support::ArbIpv4Net>().prop_map(From::from)
         ))]
         Ipv4Net,
     ),
     NetAddrV6(Ipv6Addr),
     NetV6(
         #[cfg_attr(any(test, feature = "testing"), strategy(
-            (any::<Ipv6Addr>(), 0..=128_u8)
-                .prop_map(|(ip, net)| Ipv6Net::new(ip, net).unwrap())
+            any::<arb_support::ArbIpv6Net>().prop_map(From::from)
         ))]
         Ipv6Net,
     ),
     NetAddr(IpAddr),
     Net(
         #[cfg_attr(any(test, feature = "testing"), strategy(
-            (any::<IpAddr>(), 0..=32_u8, 0..=128_u8)
-                .prop_map(|(ip, net4, net6)| match ip {
-                    IpAddr::V4(ip) => IpNet::V4(Ipv4Net::new(ip, net4).unwrap()),
-                    IpAddr::V6(ip) => IpNet::V6(Ipv6Net::new(ip, net6).unwrap()),
-                })
+            any::<arb_support::ArbIpNet>().prop_map(From::from)
         ))]
         IpNet,
     ),
@@ -562,12 +556,8 @@ impl ScfValue<'_> {
                     set_from_string(ptr, SCF_TYPE_USTRING, s)?
                 }
                 ValueRef::Uri(s) => set_from_string(ptr, SCF_TYPE_URI, s)?,
-                ValueRef::Fmri(s) => {
-                    set_from_string(ptr, SCF_TYPE_FMRI, s)?
-                }
-                ValueRef::Host(s) => {
-                    set_from_string(ptr, SCF_TYPE_HOST, s)?
-                }
+                ValueRef::Fmri(s) => set_from_string(ptr, SCF_TYPE_FMRI, s)?,
+                ValueRef::Host(s) => set_from_string(ptr, SCF_TYPE_HOST, s)?,
                 ValueRef::Hostname(s) => {
                     set_from_string(ptr, SCF_TYPE_HOSTNAME, s)?
                 }
@@ -627,6 +617,45 @@ where
         buf.resize(len, 0);
         f(buf)
     })
+}
+
+// Helpers to generate `Arbitrary` proptest values for oxnet types
+#[cfg(any(test, feature = "testing"))]
+mod arb_support {
+    use super::*;
+
+    #[derive(Debug, Clone, Copy, Arbitrary)]
+    pub(super) struct ArbIpv4Net(Ipv4Addr, #[strategy(0_u8..=32)] u8);
+
+    impl From<ArbIpv4Net> for Ipv4Net {
+        fn from(value: ArbIpv4Net) -> Self {
+            Self::new(value.0, value.1).unwrap()
+        }
+    }
+
+    #[derive(Debug, Clone, Copy, Arbitrary)]
+    pub(super) struct ArbIpv6Net(Ipv6Addr, #[strategy(0_u8..=128)] u8);
+
+    impl From<ArbIpv6Net> for Ipv6Net {
+        fn from(value: ArbIpv6Net) -> Self {
+            Self::new(value.0, value.1).unwrap()
+        }
+    }
+
+    #[derive(Debug, Clone, Copy, Arbitrary)]
+    pub(super) enum ArbIpNet {
+        V4(ArbIpv4Net),
+        V6(ArbIpv6Net),
+    }
+
+    impl From<ArbIpNet> for IpNet {
+        fn from(value: ArbIpNet) -> Self {
+            match value {
+                ArbIpNet::V4(ip) => Self::V4(ip.into()),
+                ArbIpNet::V6(ip) => Self::V6(ip.into()),
+            }
+        }
+    }
 }
 
 #[cfg(test)]
