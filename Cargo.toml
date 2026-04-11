@@ -16,12 +16,16 @@ thiserror = "2.0"
 # testing-only dependencies
 camino = { version = "1.2.2", optional = true }
 camino-tempfile = { version = "1.4.1", optional = true }
+proptest = { version = "1.11", optional = true }
+test-strategy = { version = "0.4.5", optional = true }
 
 [dev-dependencies]
 anyhow = "1.0"
 camino = "1.2.2"
 camino-tempfile = "1.4.1"
 clap = { version = "4.6", features = ["derive"] }
+proptest = "1.11"
+test-strategy = "0.4.5"
 
 [[example]]
 name = "run-isolated-configd"
@@ -31,4 +35,6 @@ required-features = ["testing"]
 testing = [
     "dep:camino",
     "dep:camino-tempfile",
+    "dep:proptest",
+    "dep:test-strategy",
 ]

@@ -26,6 +26,13 @@ use std::net::Ipv6Addr;
 use std::ptr::NonNull;
 use std::str::Utf8Error;
 
+#[cfg(any(test, feature = "testing"))]
+use proptest::prelude::any;
+#[cfg(any(test, feature = "testing"))]
+use proptest::strategy::Strategy as _;
+#[cfg(any(test, feature = "testing"))]
+use test_strategy::Arbitrary;
+
 #[derive(Debug, thiserror::Error)]
 #[error("failed to create value")]
 pub struct CreateValueError(#[source] pub LibscfError);
@@ -104,24 +111,69 @@ pub enum GetValueError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(any(test, feature = "testing"), derive(Arbitrary))]
+#[cfg_attr(any(test, feature = "testing"), arbitrary(bound('a: 'static)))]
 pub enum Value<'a> {
     Bool(bool),
     Count(u64),
     Integer(i64),
-    Time(DateTime<Utc>),
+    Time(
+        #[cfg_attr(any(test, feature = "testing"), strategy(
+            any::<std::time::SystemTime>().prop_map(From::from)
+        ))]
+        DateTime<Utc>,
+    ),
     AString(Cow<'a, str>),
     Opaque(Cow<'a, [u8]>),
     UString(Cow<'a, str>),
-    Uri(Cow<'a, str>),
-    Fmri(Cow<'a, str>),
+    Uri(
+        // Trying to send an invalid URI deadlocks libscf. Generate benign
+        // arbitrary values. TODO link to issue
+        #[cfg_attr(any(test, feature = "testing"), strategy(
+            "[[:alpha:]][[:alnum:]]*".prop_map(Cow::Owned)
+        ))]
+        Cow<'a, str>,
+    ),
+    Fmri(
+        // Trying to send an invalid FMRI deadlocks libscf. Generate benign
+        // arbitrary values. TODO link to issue
+        #[cfg_attr(any(test, feature = "testing"), strategy(
+            "[[:alpha:]][[:alnum:]]*".prop_map(Cow::Owned)
+        ))]
+        Cow<'a, str>,
+    ),
+    // Unlike URI and FMRI, libscf does essentially no validation against HOST
+    // or HOSTNAME types (only that they're valid UTF8). We don't need custom
+    // strategies for them.
     Host(Cow<'a, str>),
     Hostname(Cow<'a, str>),
     NetAddrV4(Ipv4Addr),
-    NetV4(Ipv4Net),
+    NetV4(
+        #[cfg_attr(any(test, feature = "testing"), strategy(
+            (any::<Ipv4Addr>(), 0..=32_u8)
+                .prop_map(|(ip, net)| Ipv4Net::new(ip, net).unwrap())
+        ))]
+        Ipv4Net,
+    ),
     NetAddrV6(Ipv6Addr),
-    NetV6(Ipv6Net),
+    NetV6(
+        #[cfg_attr(any(test, feature = "testing"), strategy(
+            (any::<Ipv6Addr>(), 0..=128_u8)
+                .prop_map(|(ip, net)| Ipv6Net::new(ip, net).unwrap())
+        ))]
+        Ipv6Net,
+    ),
     NetAddr(IpAddr),
-    Net(IpNet),
+    Net(
+        #[cfg_attr(any(test, feature = "testing"), strategy(
+            (any::<IpAddr>(), 0..=32_u8, 0..=128_u8)
+                .prop_map(|(ip, net4, net6)| match ip {
+                    IpAddr::V4(ip) => IpNet::V4(Ipv4Net::new(ip, net4).unwrap()),
+                    IpAddr::V6(ip) => IpNet::V6(Ipv6Net::new(ip, net6).unwrap()),
+                })
+        ))]
+        IpNet,
+    ),
 }
 
 impl<'a> Value<'a> {
@@ -530,4 +582,58 @@ where
         buf.resize(len, 0);
         f(buf)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::isolated::IsolatedConfigd;
+    use proptest::proptest;
+
+    fn scf_value_as_string(v: &ScfValue) -> String {
+        with_scf_value_buf(|buf| {
+            let ret = unsafe {
+                libscf_sys::scf_value_get_as_string(
+                    v.handle.as_ptr(),
+                    buf.as_mut_ptr().cast::<i8>(),
+                    buf.len(),
+                )
+            };
+            assert!(ret >= 0);
+            let ret = ret as usize;
+            assert!(ret <= buf.len());
+            String::from_utf8_lossy(&buf[..ret]).to_string()
+        })
+    }
+
+    #[test]
+    fn value_get_set_roundtrip() {
+        let isolated =
+            IsolatedConfigd::builder("test-svc").unwrap().build().unwrap();
+        let scf = Scf::connect_isolated(&isolated).unwrap();
+
+        proptest!(|(val: Value<'static>)| {
+            let mut sval = ScfValue::new(&scf).unwrap();
+            sval.set(&val).expect("set value");
+            let roundtrip = sval.get().expect("got value");
+            assert_eq!(roundtrip, val);
+        });
+    }
+
+    #[test]
+    fn value_display_smf_matches() {
+        let isolated =
+            IsolatedConfigd::builder("test-svc").unwrap().build().unwrap();
+        let scf = Scf::connect_isolated(&isolated).unwrap();
+
+        proptest!(|(val: Value<'static>)| {
+            let displayed = val.display_smf().to_string();
+
+            let mut sval = ScfValue::new(&scf).unwrap();
+            sval.set(&val).expect("set value");
+            let expected = scf_value_as_string(&sval);
+
+            assert_eq!(displayed, expected);
+        });
+    }
 }
