@@ -129,7 +129,7 @@ pub enum ValuesError {
         err: LibscfError,
     },
 
-    #[error("error creating value while iterating over `{parent}`")]
+    #[error("error creating value to iterate over `{parent}`")]
     CreateValue {
         parent: String,
         #[source]
@@ -674,6 +674,7 @@ mod arb_support {
 
 pub struct Values<'a, St> {
     parent: &'a Property<'a, St>,
+    value: ScfValue<'a>,
     iter: ScfIter<'a, libscf_sys::scf_value_t>,
 }
 
@@ -681,8 +682,14 @@ impl<'a, St> Values<'a, St> {
     pub(crate) fn new(
         parent: &'a Property<'a, St>,
         iter: ScfIter<'a, libscf_sys::scf_value_t>,
-    ) -> Self {
-        Self { parent, iter }
+    ) -> Result<Self, ValuesError> {
+        let value = ScfValue::new(parent.scf()).map_err(|err| {
+            ValuesError::CreateValue {
+                parent: parent.to_description_for_error(),
+                err,
+            }
+        })?;
+        Ok(Self { parent, value, iter })
     }
 }
 
@@ -690,17 +697,13 @@ impl<'a, St> Iterator for Values<'a, St> {
     type Item = Result<Value, ValuesError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let value = match ScfValue::new(self.parent.scf()) {
-            Ok(value) => value,
-            Err(err) => {
-                return Some(Err(ValuesError::CreateValue {
-                    parent: self.parent.to_description_for_error(),
-                    err,
-                }));
-            }
-        };
+        // Reset the ScfValue we're using as the destination for the next
+        // iterator item. We always return an owned `Value` or error, so don't
+        // need to maintain the contents of `self.value` any longer than this
+        // function. `scf_value_reset` is infallible.
+        () = unsafe { libscf_sys::scf_value_reset(self.value.handle.as_ptr()) };
 
-        let result = unsafe { self.iter.try_next(value.handle.as_ptr()) }?;
+        let result = unsafe { self.iter.try_next(self.value.handle.as_ptr()) }?;
         match result {
             Ok(()) => (),
             Err(err) => {
@@ -711,7 +714,7 @@ impl<'a, St> Iterator for Values<'a, St> {
             }
         };
 
-        Some(value.get().map_err(|err| ValuesError::GetValue {
+        Some(self.value.get().map_err(|err| ValuesError::GetValue {
             parent: self.parent.to_description_for_error(),
             err,
         }))

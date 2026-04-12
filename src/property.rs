@@ -128,7 +128,7 @@ impl<'a, St> Property<'a, St> {
             parent: self.to_description_for_error(),
             err,
         })?;
-        Ok(Values::new(self, iter))
+        Values::new(self, iter)
     }
 
     pub fn single_value(&self) -> Result<Value, SingleValueError> {
