@@ -6,12 +6,19 @@ use core::fmt;
 use std::ffi::CStr;
 use std::ffi::CString;
 use std::ffi::NulError;
+use std::str::Utf8Error;
 
 pub(crate) struct Utf8CString(CString);
 
 impl Utf8CString {
-    pub(crate) fn new(s: &str) -> Result<Self, NulError> {
+    pub(crate) fn from_str(s: &str) -> Result<Self, NulError> {
         CString::new(s).map(Self)
+    }
+
+    pub(crate) fn from_c_str(s: &CStr) -> Result<Self, Utf8Error> {
+        // Ensure `s` contains a legal UTF8 string.
+        let _s: &str = s.to_str()?;
+        Ok(Self(s.to_owned()))
     }
 
     pub(crate) fn as_c_str(&self) -> &CStr {
@@ -19,7 +26,7 @@ impl Utf8CString {
     }
 
     pub(crate) fn as_str(&self) -> &str {
-        self.0.to_str().expect("CString created from &str can go back to &str")
+        self.0.to_str().expect("Utf8CString always contains valid UTF8")
     }
 }
 

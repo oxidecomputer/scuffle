@@ -23,6 +23,15 @@ impl ScfIterable for libscf_sys::scf_value_t {
     }
 }
 
+impl ScfIterable for libscf_sys::scf_propertygroup_t {
+    unsafe fn try_next(
+        iter: *mut libscf_sys::scf_iter_t,
+        uninitialized_item: *mut Self,
+    ) -> libc::c_int {
+        unsafe { libscf_sys::scf_iter_next_pg(iter, uninitialized_item) }
+    }
+}
+
 struct ScfIterHandle<'scf> {
     // Phantom data referring to the `Scf` handle within which we were
     // created; this ensures we won't outlive our enclosing handle.
@@ -62,6 +71,16 @@ impl<'a> ScfUninitializedIter<'a> {
     ) -> Result<ScfIter<'a, libscf_sys::scf_value_t>, LibscfError> {
         LibscfError::from_ret(unsafe {
             libscf_sys::scf_iter_property_values(self.handle.as_ptr(), property)
+        })?;
+        Ok(ScfIter { handle: self.handle, _inner: PhantomData })
+    }
+
+    pub(crate) unsafe fn init_service_property_groups(
+        self,
+        service: *const libscf_sys::scf_service_t,
+    ) -> Result<ScfIter<'a, libscf_sys::scf_propertygroup_t>, LibscfError> {
+        LibscfError::from_ret(unsafe {
+            libscf_sys::scf_iter_service_pgs(self.handle.as_ptr(), service)
         })?;
         Ok(ScfIter { handle: self.handle, _inner: PhantomData })
     }

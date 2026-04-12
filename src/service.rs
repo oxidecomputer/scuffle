@@ -6,8 +6,11 @@ use crate::LibscfError;
 use crate::PropertyGroup;
 use crate::PropertyGroupEditable;
 use crate::PropertyGroupError;
+use crate::PropertyGroups;
+use crate::PropertyGroupsError;
 use crate::Scf;
 use crate::Scope;
+use crate::iter::ScfUninitializedIter;
 use crate::utf8cstring::Utf8CString;
 use std::ffi::NulError;
 use std::ptr::NonNull;
@@ -53,7 +56,7 @@ impl<'a> Service<'a> {
         scope: &'a Scope<'a>,
         name: &str,
     ) -> Result<Option<Self>, ServiceError> {
-        let name = Utf8CString::new(name).map_err(|err| {
+        let name = Utf8CString::from_str(name).map_err(|err| {
             ServiceError::InvalidName { name: name.to_string(), err }
         })?;
 
@@ -108,5 +111,24 @@ impl<'a> Service<'a> {
         PropertyGroupError,
     > {
         PropertyGroup::from_service(self, name)
+    }
+
+    pub fn property_groups(
+        &self,
+    ) -> Result<PropertyGroups<'_, PropertyGroupEditable>, PropertyGroupsError>
+    {
+        let iter = ScfUninitializedIter::new(self.scf()).map_err(|err| {
+            PropertyGroupsError::CreateIter {
+                parent: self.name().to_string(),
+                err,
+            }
+        })?;
+        let iter =
+            unsafe { iter.init_service_property_groups(self.handle.as_ptr()) }
+                .map_err(|err| PropertyGroupsError::InitIter {
+                    parent: self.name().to_string(),
+                    err,
+                })?;
+        Ok(PropertyGroups::from_service(self, iter))
     }
 }

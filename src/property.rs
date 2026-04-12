@@ -68,7 +68,7 @@ impl<'a, St> Property<'a, St> {
         property_group: &'a PropertyGroup<'a, St>,
         name: &str,
     ) -> Result<Option<Self>, PropertyError> {
-        let name = Utf8CString::new(name).map_err(|err| {
+        let name = Utf8CString::from_str(name).map_err(|err| {
             PropertyError::InvalidName { name: name.to_string(), err }
         })?;
 

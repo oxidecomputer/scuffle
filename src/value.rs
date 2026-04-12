@@ -377,7 +377,7 @@ impl ScfValue<'_> {
         // extracting a Rust string from what libscf writes to `buf`.
         fn get_as_string(
             ptr: *mut libscf_sys::scf_value_t,
-            buf: &mut Vec<u8>,
+            buf: &mut [u8],
         ) -> Result<&str, GetValueError> {
             let sz = LibscfError::from_ssize(unsafe {
                 libscf_sys::scf_value_get_as_string(
@@ -705,19 +705,17 @@ impl<'a, St> Iterator for Values<'a, St> {
 
         let result = unsafe { self.iter.try_next(self.value.handle.as_ptr()) }?;
         match result {
-            Ok(()) => (),
-            Err(err) => {
-                return Some(Err(ValuesError::Iterating {
+            Ok(()) => {
+                Some(self.value.get().map_err(|err| ValuesError::GetValue {
                     parent: self.parent.to_description_for_error(),
                     err,
-                }));
+                }))
             }
-        };
-
-        Some(self.value.get().map_err(|err| ValuesError::GetValue {
-            parent: self.parent.to_description_for_error(),
-            err,
-        }))
+            Err(err) => Some(Err(ValuesError::Iterating {
+                parent: self.parent.to_description_for_error(),
+                err,
+            })),
+        }
     }
 }
 

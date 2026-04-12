@@ -16,6 +16,7 @@ mod value;
 #[cfg(any(test, feature = "testing"))]
 pub mod isolated;
 
+pub use buf::ScfStringError;
 pub use error::LibscfError;
 pub use property::Property;
 pub use property::PropertyError;
@@ -24,6 +25,8 @@ pub use property_group::PropertyGroup;
 pub use property_group::PropertyGroupEditable;
 pub use property_group::PropertyGroupError;
 pub use property_group::PropertyGroupSnapshot;
+pub use property_group::PropertyGroups;
+pub use property_group::PropertyGroupsError;
 pub use scf::RefreshError;
 pub use scf::Scf;
 pub use scf::ScfError;
