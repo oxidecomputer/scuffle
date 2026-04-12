@@ -312,16 +312,24 @@ impl Drop for ScfValue<'_> {
 
 impl<'scf> ScfValue<'scf> {
     pub(crate) fn new(scf: &'scf Scf) -> Result<Self, CreateValueError> {
-        let value =
-            unsafe { libscf_sys::scf_value_create(scf.handle().as_ptr()) };
-        let value = LibscfError::from_ptr(value).map_err(CreateValueError)?;
-        Ok(Self { _scf: PhantomData, handle: value })
+        let handle = scf.scf_value_create().map_err(CreateValueError)?;
+        Ok(Self { _scf: PhantomData, handle })
     }
 }
 
 impl ScfValue<'_> {
-    pub(crate) fn handle(&self) -> &NonNull<libscf_sys::scf_value_t> {
-        &self.handle
+    pub(crate) unsafe fn scf_handle_decorate(
+        &self,
+        scf: *mut libscf_sys::scf_handle_t,
+        decoration: *const i8,
+    ) -> Result<(), LibscfError> {
+        LibscfError::from_ret(unsafe {
+            libscf_sys::scf_handle_decorate(
+                scf,
+                decoration,
+                self.handle.as_ptr(),
+            )
+        })
     }
 
     pub(crate) fn get(&self) -> Result<Value, GetValueError> {

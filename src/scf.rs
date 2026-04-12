@@ -189,14 +189,13 @@ impl<'a> Scf<'a> {
                 value.set(ValueRef::AString(zonename)).map_err(|err| {
                     ScfError::SetZoneName { zonename: zonename.to_owned(), err }
                 })?;
-                let ret = unsafe {
-                    libscf_sys::scf_handle_decorate(
+                unsafe {
+                    value.scf_handle_decorate(
                         scf.handle.as_ptr(),
                         libscf_sys::decorations::ZONE.as_ptr().cast::<i8>(),
-                        value.handle().as_ptr(),
                     )
-                };
-                () = LibscfError::from_ret(ret).map_err(|err| {
+                }
+                .map_err(|err| {
                     ScfError::SetDecorationZoneName {
                         zonename: zonename.to_owned(),
                         err,
@@ -218,14 +217,13 @@ impl<'a> Scf<'a> {
                         err,
                     }
                 })?;
-                let ret = unsafe {
-                    libscf_sys::scf_handle_decorate(
+                unsafe {
+                    value.scf_handle_decorate(
                         scf.handle.as_ptr(),
                         decorations::DOOR_PATH.as_ptr().cast::<i8>(),
-                        value.handle().as_ptr(),
                     )
-                };
-                () = LibscfError::from_ret(ret).map_err(|err| {
+                }
+                .map_err(|err| {
                     ScfError::SetDecorationDoorPath {
                         door_path: door_path.to_owned(),
                         err,
@@ -256,8 +254,41 @@ impl<'a> Scf<'a> {
         self.refresher.refresh(fmri)
     }
 
-    pub(crate) fn handle(&self) -> &NonNull<libscf_sys::scf_handle_t> {
-        &self.handle
+    pub(crate) unsafe fn scf_get_scope_local(
+        &self,
+        scope: *mut libscf_sys::scf_scope_t,
+    ) -> Result<(), LibscfError> {
+        LibscfError::from_ret(unsafe {
+            libscf_sys::scf_handle_get_scope(
+                self.handle.as_ptr(),
+                libscf_sys::SCF_SCOPE_LOCAL.as_ptr().cast::<i8>(),
+                scope,
+            )
+        })
+    }
+
+    pub(crate) fn scf_scope_create(
+        &self,
+    ) -> Result<NonNull<libscf_sys::scf_scope_t>, LibscfError> {
+        LibscfError::from_ptr(unsafe {
+            libscf_sys::scf_scope_create(self.handle.as_ptr())
+        })
+    }
+
+    pub(crate) fn scf_service_create(
+        &self,
+    ) -> Result<NonNull<libscf_sys::scf_service_t>, LibscfError> {
+        LibscfError::from_ptr(unsafe {
+            libscf_sys::scf_service_create(self.handle.as_ptr())
+        })
+    }
+
+    pub(crate) fn scf_value_create(
+        &self,
+    ) -> Result<NonNull<libscf_sys::scf_value_t>, LibscfError> {
+        LibscfError::from_ptr(unsafe {
+            libscf_sys::scf_value_create(self.handle.as_ptr())
+        })
     }
 }
 

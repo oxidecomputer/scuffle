@@ -53,25 +53,20 @@ impl<'a> Service<'a> {
             ServiceError::InvalidName { name: name.to_string(), err }
         })?;
 
-        let handle = LibscfError::from_ptr(unsafe {
-            libscf_sys::scf_service_create(scope.scf().handle().as_ptr())
-        })
-        .map_err(|err| ServiceError::HandleCreate {
-            name: name.to_string(),
-            err,
+        let handle = scope.scf().scf_service_create().map_err(|err| {
+            ServiceError::HandleCreate { name: name.to_string(), err }
         })?;
 
         // Construct the Service object immediately so we clean up on drop on
         // any error below.
         let service = Self { scope, name, handle };
 
-        let result = LibscfError::from_ret(unsafe {
-            libscf_sys::scf_scope_get_service(
-                scope.handle().as_ptr(),
+        let result = unsafe {
+            service.scope.scf_get_service(
                 service.name.as_c_str().as_ptr(),
                 service.handle.as_ptr(),
             )
-        });
+        };
 
         match result {
             Ok(()) => Ok(Some(service)),
