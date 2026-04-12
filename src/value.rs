@@ -4,6 +4,8 @@
 
 use crate::LibscfError;
 use crate::Scf;
+use crate::buf::with_scf_value_buf;
+use crate::iter::FromScfIter;
 use chrono::DateTime;
 use chrono::Utc;
 use libscf_sys::scf_type_t;
@@ -11,8 +13,6 @@ use num_traits::FromPrimitive;
 use oxnet::IpNet;
 use oxnet::Ipv4Net;
 use oxnet::Ipv6Net;
-use std::cell::Cell;
-use std::cell::RefCell;
 use std::ffi::CStr;
 use std::ffi::CString;
 use std::ffi::FromBytesWithNulError;
@@ -311,7 +311,7 @@ impl Drop for ScfValue<'_> {
 }
 
 impl<'scf> ScfValue<'scf> {
-    pub(crate) fn new(scf: &'scf Scf) -> Result<Self, CreateValueError> {
+    pub(crate) fn new(scf: &'scf Scf<'scf>) -> Result<Self, CreateValueError> {
         let handle = scf.scf_value_create().map_err(CreateValueError)?;
         Ok(Self { _scf: PhantomData, handle })
     }
@@ -594,39 +594,6 @@ impl ScfValue<'_> {
     }
 }
 
-fn with_scf_value_buf<F, T>(f: F) -> T
-where
-    F: FnOnce(&mut Vec<u8>) -> T,
-{
-    thread_local! {
-        static BUF: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
-        static MAX_LEN: Cell<Option<usize>> = const { Cell::new(None) };
-    }
-
-    let len = MAX_LEN.with(|cell| {
-        if let Some(len) = cell.get() {
-            return len;
-        }
-        let sz = unsafe {
-            libscf_sys::scf_limit(libscf_sys::SCF_LIMIT_MAX_VALUE_LENGTH)
-        };
-        // scf_limit() is documented as only failing if we pass an unknown
-        // argument; `SCF_LIMIT_MAX_VALUE_LENGTH` is not unknown, so it should
-        // never fail. If the constant value changes or is out of sync, we
-        // should catch that immediately in our unit tests.
-        assert!(sz > 0, "unexpected return value from scf_limit(): {sz}");
-        let sz = sz as usize;
-        cell.set(Some(sz));
-        sz
-    });
-
-    BUF.with_borrow_mut(|buf| {
-        buf.clear();
-        buf.resize(len, 0);
-        f(buf)
-    })
-}
-
 // Helpers to generate `Arbitrary` proptest values for oxnet types
 #[cfg(any(test, feature = "testing"))]
 mod arb_support {
@@ -663,6 +630,20 @@ mod arb_support {
                 ArbIpNet::V6(ip) => Self::V6(ip.into()),
             }
         }
+    }
+}
+
+impl<'a> FromScfIter<'a> for ScfValue<'a> {
+    fn create_uninitialized(scf: &'a Scf<'a>) -> Result<Self, LibscfError> {
+        let handle = scf.scf_value_create()?;
+        Ok(Self { _scf: PhantomData, handle })
+    }
+
+    unsafe fn try_init_from_iter(
+        &self,
+        iter: *mut libscf_sys::scf_iter_t,
+    ) -> libc::c_int {
+        unsafe { libscf_sys::scf_iter_next_value(iter, self.handle.as_ptr()) }
     }
 }
 

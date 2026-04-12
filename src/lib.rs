@@ -2,7 +2,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+mod buf;
 mod error;
+mod iter;
+mod property;
+mod property_group;
 mod scf;
 mod scope;
 mod service;
@@ -13,6 +17,14 @@ mod value;
 pub mod isolated;
 
 pub use error::LibscfError;
+pub use property::Property;
+pub use property::PropertyError;
+pub use property::Values;
+pub use property::ValuesError;
+pub use property_group::PropertyGroup;
+pub use property_group::PropertyGroupEditable;
+pub use property_group::PropertyGroupError;
+pub use property_group::PropertyGroupSnapshot;
 pub use scf::RefreshError;
 pub use scf::Scf;
 pub use scf::ScfError;

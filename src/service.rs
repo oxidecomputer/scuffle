@@ -3,6 +3,10 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::LibscfError;
+use crate::PropertyGroup;
+use crate::PropertyGroupEditable;
+use crate::PropertyGroupError;
+use crate::Scf;
 use crate::Scope;
 use crate::utf8cstring::Utf8CString;
 use std::ffi::NulError;
@@ -78,7 +82,31 @@ impl<'a> Service<'a> {
         }
     }
 
+    pub(crate) fn scf(&self) -> &'a Scf<'a> {
+        self.scope.scf()
+    }
+
+    pub(crate) unsafe fn scf_get_pg(
+        &self,
+        name: *const i8,
+        pg: *mut libscf_sys::scf_propertygroup_t,
+    ) -> Result<(), LibscfError> {
+        LibscfError::from_ret(unsafe {
+            libscf_sys::scf_service_get_pg(self.handle.as_ptr(), name, pg)
+        })
+    }
+
     pub fn name(&self) -> &str {
         self.name.as_str()
+    }
+
+    pub fn property_group(
+        &self,
+        name: &str,
+    ) -> Result<
+        Option<PropertyGroup<'_, PropertyGroupEditable>>,
+        PropertyGroupError,
+    > {
+        PropertyGroup::from_service(self, name)
     }
 }

@@ -284,11 +284,35 @@ impl<'a> Scf<'a> {
         })
     }
 
+    pub(crate) fn scf_property_group_create(
+        &self,
+    ) -> Result<NonNull<libscf_sys::scf_propertygroup_t>, LibscfError> {
+        LibscfError::from_ptr(unsafe {
+            libscf_sys::scf_pg_create(self.handle.as_ptr())
+        })
+    }
+
+    pub(crate) fn scf_property_create(
+        &self,
+    ) -> Result<NonNull<libscf_sys::scf_property_t>, LibscfError> {
+        LibscfError::from_ptr(unsafe {
+            libscf_sys::scf_property_create(self.handle.as_ptr())
+        })
+    }
+
     pub(crate) fn scf_value_create(
         &self,
     ) -> Result<NonNull<libscf_sys::scf_value_t>, LibscfError> {
         LibscfError::from_ptr(unsafe {
             libscf_sys::scf_value_create(self.handle.as_ptr())
+        })
+    }
+
+    pub(crate) fn scf_iter_create(
+        &self,
+    ) -> Result<NonNull<libscf_sys::scf_iter_t>, LibscfError> {
+        LibscfError::from_ptr(unsafe {
+            libscf_sys::scf_iter_create(self.handle.as_ptr())
         })
     }
 }
