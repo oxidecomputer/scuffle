@@ -2,15 +2,14 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::GetValueError;
 use crate::LibscfError;
 use crate::PropertyGroup;
 use crate::Scf;
 use crate::Value;
-use crate::iter::ScfIter;
-use crate::iter::ScfIterKind;
+use crate::Values;
+use crate::ValuesError;
+use crate::iter::ScfUninitializedIter;
 use crate::utf8cstring::Utf8CString;
-use crate::value::ScfValue;
 use std::ffi::NulError;
 use std::ptr::NonNull;
 
@@ -50,30 +49,6 @@ pub enum SingleValueError {
 
     #[error("error getting single value")]
     ValuesError(#[from] ValuesError),
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum ValuesError {
-    #[error("error creating iterator over `{parent}`")]
-    CreateIter {
-        parent: String,
-        #[source]
-        err: LibscfError,
-    },
-
-    #[error("error iterating values of `{parent}`")]
-    Iterating {
-        parent: String,
-        #[source]
-        err: LibscfError,
-    },
-
-    #[error("error converting value while iterating `{parent}`")]
-    GetValue {
-        parent: String,
-        #[source]
-        err: GetValueError,
-    },
 }
 
 pub struct Property<'a, St> {
@@ -129,7 +104,7 @@ impl<'a, St> Property<'a, St> {
         self.property_group.scf()
     }
 
-    fn to_description_for_error(&self) -> String {
+    pub(crate) fn to_description_for_error(&self) -> String {
         format!(
             "{}/{}",
             self.property_group.to_description_for_error(),
@@ -142,12 +117,18 @@ impl<'a, St> Property<'a, St> {
     }
 
     pub fn values(&self) -> Result<Values<'_, St>, ValuesError> {
-        let iter = unsafe { ScfIter::new(self.scf(), self.handle.as_ptr()) }
-            .map_err(|err| ValuesError::CreateIter {
+        let iter = ScfUninitializedIter::new(self.scf()).map_err(|err| {
+            ValuesError::CreateIter {
                 parent: self.to_description_for_error(),
                 err,
-            })?;
-        Ok(Values { parent: self, iter })
+            }
+        })?;
+        let iter = unsafe { iter.init_property_values(self.handle.as_ptr()) }
+            .map_err(|err| ValuesError::InitIter {
+            parent: self.to_description_for_error(),
+            err,
+        })?;
+        Ok(Values::new(self, iter))
     }
 
     pub fn single_value(&self) -> Result<Value, SingleValueError> {
@@ -164,44 +145,6 @@ impl<'a, St> Property<'a, St> {
                 description: self.to_description_for_error(),
             }),
             Some(Err(err)) => Err(err.into()),
-        }
-    }
-}
-
-enum ScfIterKindPropertyValues {}
-
-impl ScfIterKind for ScfIterKindPropertyValues {
-    type Parent = libscf_sys::scf_property_t;
-    type Item<'a> = ScfValue<'a>;
-
-    unsafe fn init(
-        iter: *mut libscf_sys::scf_iter_t,
-        parent: *const Self::Parent,
-    ) -> libc::c_int {
-        unsafe { libscf_sys::scf_iter_property_values(iter, parent) }
-    }
-}
-
-pub struct Values<'a, St> {
-    parent: &'a Property<'a, St>,
-    iter: ScfIter<'a, ScfIterKindPropertyValues>,
-}
-
-impl<'a, St> Iterator for Values<'a, St> {
-    type Item = Result<Value, ValuesError>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.iter.next()? {
-            Ok(scf_val) => {
-                Some(scf_val.get().map_err(|err| ValuesError::GetValue {
-                    parent: self.parent.to_description_for_error(),
-                    err,
-                }))
-            }
-            Err(err) => Some(Err(ValuesError::Iterating {
-                parent: self.parent.to_description_for_error(),
-                err,
-            })),
         }
     }
 }

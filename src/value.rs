@@ -3,9 +3,10 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::LibscfError;
+use crate::Property;
 use crate::Scf;
 use crate::buf::with_scf_value_buf;
-use crate::iter::FromScfIter;
+use crate::iter::ScfIter;
 use chrono::DateTime;
 use chrono::Utc;
 use libscf_sys::scf_type_t;
@@ -110,6 +111,44 @@ pub enum GetValueError {
 
     #[error("invalid net address value: {0}")]
     InvalidNetAddr(String),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ValuesError {
+    #[error("error creating iterator over `{parent}`")]
+    CreateIter {
+        parent: String,
+        #[source]
+        err: LibscfError,
+    },
+
+    #[error("error initializing iterator over `{parent}`")]
+    InitIter {
+        parent: String,
+        #[source]
+        err: LibscfError,
+    },
+
+    #[error("error creating value while iterating over `{parent}`")]
+    CreateValue {
+        parent: String,
+        #[source]
+        err: CreateValueError,
+    },
+
+    #[error("error iterating values of `{parent}`")]
+    Iterating {
+        parent: String,
+        #[source]
+        err: LibscfError,
+    },
+
+    #[error("error converting value while iterating `{parent}`")]
+    GetValue {
+        parent: String,
+        #[source]
+        err: GetValueError,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -633,17 +672,49 @@ mod arb_support {
     }
 }
 
-impl<'a> FromScfIter<'a> for ScfValue<'a> {
-    fn create_uninitialized(scf: &'a Scf<'a>) -> Result<Self, LibscfError> {
-        let handle = scf.scf_value_create()?;
-        Ok(Self { _scf: PhantomData, handle })
-    }
+pub struct Values<'a, St> {
+    parent: &'a Property<'a, St>,
+    iter: ScfIter<'a, libscf_sys::scf_value_t>,
+}
 
-    unsafe fn try_init_from_iter(
-        &self,
-        iter: *mut libscf_sys::scf_iter_t,
-    ) -> libc::c_int {
-        unsafe { libscf_sys::scf_iter_next_value(iter, self.handle.as_ptr()) }
+impl<'a, St> Values<'a, St> {
+    pub(crate) fn new(
+        parent: &'a Property<'a, St>,
+        iter: ScfIter<'a, libscf_sys::scf_value_t>,
+    ) -> Self {
+        Self { parent, iter }
+    }
+}
+
+impl<'a, St> Iterator for Values<'a, St> {
+    type Item = Result<Value, ValuesError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let value = match ScfValue::new(self.parent.scf()) {
+            Ok(value) => value,
+            Err(err) => {
+                return Some(Err(ValuesError::CreateValue {
+                    parent: self.parent.to_description_for_error(),
+                    err,
+                }));
+            }
+        };
+
+        let result = unsafe { self.iter.try_next(value.handle.as_ptr()) }?;
+        match result {
+            Ok(()) => (),
+            Err(err) => {
+                return Some(Err(ValuesError::Iterating {
+                    parent: self.parent.to_description_for_error(),
+                    err,
+                }));
+            }
+        };
+
+        Some(value.get().map_err(|err| ValuesError::GetValue {
+            parent: self.parent.to_description_for_error(),
+            err,
+        }))
     }
 }
 

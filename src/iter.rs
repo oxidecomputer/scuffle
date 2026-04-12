@@ -7,62 +7,79 @@ use crate::Scf;
 use std::marker::PhantomData;
 use std::ptr::NonNull;
 
-pub(crate) trait FromScfIter<'a>: Sized {
-    fn create_uninitialized(scf: &'a Scf<'a>) -> Result<Self, LibscfError>;
-
-    unsafe fn try_init_from_iter(
-        &self,
+pub(crate) trait ScfIterable {
+    unsafe fn try_next(
         iter: *mut libscf_sys::scf_iter_t,
+        uninitialized_item: *mut Self,
     ) -> libc::c_int;
 }
 
-pub(crate) trait ScfIterKind {
-    type Parent;
-    type Item<'a>: FromScfIter<'a>;
-
-    unsafe fn init(
+impl ScfIterable for libscf_sys::scf_value_t {
+    unsafe fn try_next(
         iter: *mut libscf_sys::scf_iter_t,
-        parent: *const Self::Parent,
-    ) -> libc::c_int;
+        uninitialized_item: *mut Self,
+    ) -> libc::c_int {
+        unsafe { libscf_sys::scf_iter_next_value(iter, uninitialized_item) }
+    }
 }
 
-pub(crate) struct ScfIter<'a, T> {
-    scf: &'a Scf<'a>,
+struct ScfIterHandle<'scf> {
+    // Phantom data referring to the `Scf` handle within which we were
+    // created; this ensures we won't outlive our enclosing handle.
+    _scf: PhantomData<&'scf ()>,
     handle: NonNull<libscf_sys::scf_iter_t>,
-    _inner: PhantomData<fn() -> T>,
 }
 
-impl<T> Drop for ScfIter<'_, T> {
+impl Drop for ScfIterHandle<'_> {
     fn drop(&mut self) {
         unsafe { libscf_sys::scf_iter_destroy(self.handle.as_ptr()) };
     }
 }
 
-impl<'a, T: ScfIterKind> ScfIter<'a, T> {
-    pub(crate) unsafe fn new(
-        scf: &'a Scf<'a>,
-        parent: *const T::Parent,
-    ) -> Result<Self, LibscfError> {
+impl<'a> ScfIterHandle<'a> {
+    fn new(scf: &'a Scf<'a>) -> Result<Self, LibscfError> {
         let handle = scf.scf_iter_create()?;
-        let iter = Self { scf, handle, _inner: PhantomData };
-
-        LibscfError::from_ret(unsafe {
-            T::init(iter.handle.as_ptr(), parent)
-        })?;
-
-        Ok(iter)
+        Ok(Self { _scf: PhantomData, handle })
     }
 
-    pub(crate) fn next(&mut self) -> Option<Result<T::Item<'a>, LibscfError>> {
-        let item = match T::Item::create_uninitialized(self.scf) {
-            Ok(item) => item,
-            Err(err) => return Some(Err(err)),
-        };
-        let ret = unsafe { item.try_init_from_iter(self.handle.as_ptr()) };
+    fn as_ptr(&self) -> *mut libscf_sys::scf_iter_t {
+        self.handle.as_ptr()
+    }
+}
 
-        match ret {
+pub(crate) struct ScfUninitializedIter<'a> {
+    handle: ScfIterHandle<'a>,
+}
+
+impl<'a> ScfUninitializedIter<'a> {
+    pub(crate) fn new(scf: &'a Scf<'a>) -> Result<Self, LibscfError> {
+        Ok(Self { handle: ScfIterHandle::new(scf)? })
+    }
+
+    pub(crate) unsafe fn init_property_values(
+        self,
+        property: *const libscf_sys::scf_property_t,
+    ) -> Result<ScfIter<'a, libscf_sys::scf_value_t>, LibscfError> {
+        LibscfError::from_ret(unsafe {
+            libscf_sys::scf_iter_property_values(self.handle.as_ptr(), property)
+        })?;
+        Ok(ScfIter { handle: self.handle, _inner: PhantomData })
+    }
+}
+
+pub(crate) struct ScfIter<'a, T> {
+    handle: ScfIterHandle<'a>,
+    _inner: PhantomData<fn() -> T>,
+}
+
+impl<'a, T: ScfIterable> ScfIter<'a, T> {
+    pub(crate) unsafe fn try_next(
+        &mut self,
+        out: *mut T,
+    ) -> Option<Result<(), LibscfError>> {
+        match unsafe { T::try_next(self.handle.as_ptr(), out) } {
             0 => None,
-            1 => Some(Ok(item)),
+            1 => Some(Ok(())),
             _ => Some(Err(LibscfError::last())),
         }
     }
