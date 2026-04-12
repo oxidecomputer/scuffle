@@ -115,11 +115,12 @@ pub struct Scf<'a> {
 
 impl Drop for Scf<'_> {
     fn drop(&mut self) {
-        // We bind the handle in `connect()`, but only at the end: it's possible
-        // we could fail partway through `connect()` and drop an `Scf` before we
-        // bind it. If so, don't try to unbind it. (libscf guards against this
-        // currently, but does return an error if we try to unbind an
-        // already-unbound handle.)
+        // We bind the handle in `connect_common()`, but only at the end: it's
+        // possible we could fail partway through `connect_common()` and drop an
+        // `Scf` before we bind it. If so, don't try to unbind it. (libscf
+        // guards against this, so unbinding an unbound handle doesn't cause
+        // undefined behavior, but (a) it does return an error and (b) that's an
+        // undocumented implementation detail.)
         if self.did_bind_handle {
             unsafe { libscf_sys::scf_handle_unbind(self.handle.as_ptr()) };
         }
@@ -190,7 +191,7 @@ impl<'a> Scf<'a> {
                     ScfError::SetZoneName { zonename: zonename.to_owned(), err }
                 })?;
                 unsafe {
-                    value.scf_handle_decorate(
+                    value.scf_apply_as_decoration(
                         scf.handle.as_ptr(),
                         libscf_sys::decorations::ZONE.as_ptr().cast::<i8>(),
                     )
@@ -218,7 +219,7 @@ impl<'a> Scf<'a> {
                     }
                 })?;
                 unsafe {
-                    value.scf_handle_decorate(
+                    value.scf_apply_as_decoration(
                         scf.handle.as_ptr(),
                         decorations::DOOR_PATH.as_ptr().cast::<i8>(),
                     )

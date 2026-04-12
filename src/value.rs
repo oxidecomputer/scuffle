@@ -299,7 +299,7 @@ impl fmt::Display for ValueDisplaySmf<'_> {
 
 pub(crate) struct ScfValue<'scf> {
     // Phantom data referring to the `Scf` handle within which we were
-    // created; this ensures we can't be dropped before that instance.
+    // created; this ensures we won't outlive our enclosing handle.
     _scf: PhantomData<&'scf ()>,
     handle: NonNull<libscf_sys::scf_value_t>,
 }
@@ -318,7 +318,7 @@ impl<'scf> ScfValue<'scf> {
 }
 
 impl ScfValue<'_> {
-    pub(crate) unsafe fn scf_handle_decorate(
+    pub(crate) unsafe fn scf_apply_as_decoration(
         &self,
         scf: *mut libscf_sys::scf_handle_t,
         decoration: *const i8,
