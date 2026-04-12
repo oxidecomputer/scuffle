@@ -28,6 +28,9 @@ proptest = "1.11"
 test-strategy = "0.4.5"
 
 [[example]]
+name = "get-property-values"
+
+[[example]]
 name = "run-isolated-configd"
 required-features = ["testing"]
 
