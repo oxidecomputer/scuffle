@@ -38,13 +38,41 @@ pub enum PropertyError {
         #[source]
         err: LibscfError,
     },
+}
 
-    #[error("error creating iterator over `{parent}/{name}`")]
+#[derive(Debug, thiserror::Error)]
+pub enum SingleValueError {
+    #[error("property `{description}` has no values")]
+    NoValues { description: String },
+
+    #[error("property `{description}` has more than one value")]
+    MultipleValues { description: String },
+
+    #[error("error getting single value")]
+    ValuesError(#[from] ValuesError),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ValuesError {
+    #[error("error creating iterator over `{parent}`")]
     CreateIter {
         parent: String,
-        name: String,
         #[source]
         err: LibscfError,
+    },
+
+    #[error("error iterating values of `{parent}`")]
+    Iterating {
+        parent: String,
+        #[source]
+        err: LibscfError,
+    },
+
+    #[error("error converting value while iterating `{parent}`")]
+    GetValue {
+        parent: String,
+        #[source]
+        err: GetValueError,
     },
 }
 
@@ -113,14 +141,30 @@ impl<'a, St> Property<'a, St> {
         self.name.as_str()
     }
 
-    pub fn values(&self) -> Result<Values<'_, St>, PropertyError> {
+    pub fn values(&self) -> Result<Values<'_, St>, ValuesError> {
         let iter = unsafe { ScfIter::new(self.scf(), self.handle.as_ptr()) }
-            .map_err(|err| PropertyError::CreateIter {
-                parent: self.property_group.to_description_for_error(),
-                name: self.name.to_string(),
+            .map_err(|err| ValuesError::CreateIter {
+                parent: self.to_description_for_error(),
                 err,
             })?;
         Ok(Values { parent: self, iter })
+    }
+
+    pub fn single_value(&self) -> Result<Value, SingleValueError> {
+        let mut iter = self.values()?;
+
+        let first_val =
+            iter.next().ok_or_else(|| SingleValueError::NoValues {
+                description: self.to_description_for_error(),
+            })??;
+
+        match iter.next() {
+            None => Ok(first_val),
+            Some(Ok(_)) => Err(SingleValueError::MultipleValues {
+                description: self.to_description_for_error(),
+            }),
+            Some(Err(err)) => Err(err.into()),
+        }
     }
 }
 
@@ -136,23 +180,6 @@ impl ScfIterKind for ScfIterKindPropertyValues {
     ) -> libc::c_int {
         unsafe { libscf_sys::scf_iter_property_values(iter, parent) }
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum ValuesError {
-    #[error("error iterating values of `{parent}`")]
-    Iterating {
-        parent: String,
-        #[source]
-        err: LibscfError,
-    },
-
-    #[error("error converting value while iterating `{parent}`")]
-    GetValue {
-        parent: String,
-        #[source]
-        err: GetValueError,
-    },
 }
 
 pub struct Values<'a, St> {
