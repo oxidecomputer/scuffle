@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 mod buf;
+mod has_property_groups;
 mod instance;
 mod iter;
 mod limit;
@@ -19,6 +20,7 @@ pub mod error;
 #[cfg(any(test, feature = "testing"))]
 pub mod isolated;
 
+pub use has_property_groups::HasPropertyGroups;
 pub use instance::Instance;
 pub use instance::Instances;
 pub use property::Properties;

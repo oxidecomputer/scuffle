@@ -4,6 +4,7 @@
 
 use anyhow::bail;
 use clap::Parser;
+use scuffle::HasPropertyGroups;
 use scuffle::Property;
 use scuffle::PropertyGroup;
 use scuffle::Scf;
@@ -13,6 +14,8 @@ use scuffle::Zone;
 #[command(about = "Print the values of an SMF service property")]
 struct Args {
     service: String,
+    #[arg(long)]
+    instance: Option<String>,
     property_group: Option<String>,
     #[arg(requires = "property_group")]
     property: Option<String>,
@@ -34,29 +37,23 @@ fn print_properties<St>(pg: &PropertyGroup<'_, St>) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn main() -> anyhow::Result<()> {
-    let Args { service, property_group, property } = Args::parse();
-
-    let scf = Scf::connect(Zone::Global)?;
-    let scope = scf.scope_local()?;
-
-    let Some(service) = scope.service(&service)? else {
-        bail!("service `{}` not found", service);
-    };
-
+fn run(
+    target: &impl HasPropertyGroups,
+    name: &str,
+    property_group: Option<String>,
+    property: Option<String>,
+) -> anyhow::Result<()> {
     if let Some(property_group) = property_group {
-        let Some(pg) = service.property_group(&property_group)? else {
+        let Some(pg) = target.property_group(&property_group)? else {
             bail!(
-                "property group `{property_group}` not found in service `{}`",
-                service.name(),
+                "property group `{property_group}` not found in `{name}`",
             );
         };
 
         if let Some(property) = property {
             let Some(prop) = pg.property(&property)? else {
                 bail!(
-                    "property `{property}` not found in `{}/:properties/{}`",
-                    service.name(),
+                    "property `{property}` not found in `{name}/:properties/{}`",
                     pg.name(),
                 );
             };
@@ -65,11 +62,36 @@ fn main() -> anyhow::Result<()> {
             print_properties(&pg)?;
         }
     } else {
-        for pg in service.property_groups()? {
+        for pg in target.property_groups()? {
             let pg = pg?;
             println!("-- property group {} --", pg.name());
             print_properties(&pg)?;
         }
+    }
+    Ok(())
+}
+
+fn main() -> anyhow::Result<()> {
+    let Args { service, instance, property_group, property } = Args::parse();
+
+    let scf = Scf::connect(Zone::Global)?;
+    let scope = scf.scope_local()?;
+
+    let Some(service) = scope.service(&service)? else {
+        bail!("service `{}` not found", service);
+    };
+
+    if let Some(inst_name) = &instance {
+        let Some(inst) = service.instance(inst_name)? else {
+            bail!(
+                "instance `{inst_name}` not found in service `{}`",
+                service.name(),
+            );
+        };
+        let name = format!("{}:{}", service.name(), inst.name());
+        run(&inst, &name, property_group, property)?;
+    } else {
+        run(&service, service.name(), property_group, property)?;
     }
 
     Ok(())

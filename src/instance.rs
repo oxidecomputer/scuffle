@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use crate::HasPropertyGroups;
 use crate::PropertyGroup;
 use crate::PropertyGroupEditable;
 use crate::PropertyGroups;
@@ -80,18 +81,21 @@ impl<'a> Instance<'a> {
     pub fn name(&self) -> &str {
         self.name.as_str()
     }
+}
 
-    pub fn property_group(
+impl HasPropertyGroups for Instance<'_> {
+    type St = PropertyGroupEditable;
+
+    fn property_group(
         &self,
         name: &str,
-    ) -> Result<Option<PropertyGroup<'_, PropertyGroupEditable>>, LookupError>
-    {
+    ) -> Result<Option<PropertyGroup<'_, Self::St>>, LookupError> {
         PropertyGroup::from_instance(self, name)
     }
 
-    pub fn property_groups(
+    fn property_groups(
         &self,
-    ) -> Result<PropertyGroups<'_, PropertyGroupEditable>, IterError> {
+    ) -> Result<PropertyGroups<'_, Self::St>, IterError> {
         let iter = ScfUninitializedIter::new(self.scf()).map_err(|err| {
             IterError::CreateIter {
                 entity: IterEntity::PropertyGroup,
