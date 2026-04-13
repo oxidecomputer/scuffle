@@ -15,6 +15,10 @@ use std::ffi::NulError;
 use std::marker::PhantomData;
 use std::ptr::NonNull;
 
+mod object;
+
+pub(crate) use object::ScfObject;
+
 #[cfg(any(test, feature = "testing"))]
 use crate::isolated::IsolatedConfigd;
 
@@ -265,14 +269,6 @@ impl<'a> Scf<'a> {
                 libscf_sys::SCF_SCOPE_LOCAL.as_ptr().cast::<i8>(),
                 scope,
             )
-        })
-    }
-
-    pub(crate) fn scf_scope_create(
-        &self,
-    ) -> Result<NonNull<libscf_sys::scf_scope_t>, LibscfError> {
-        LibscfError::from_ptr(unsafe {
-            libscf_sys::scf_scope_create(self.handle.as_ptr())
         })
     }
 

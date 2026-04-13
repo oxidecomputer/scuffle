@@ -6,7 +6,7 @@ use crate::LibscfError;
 use crate::Scf;
 use crate::Service;
 use crate::ServiceError;
-use std::ptr::NonNull;
+use crate::scf::ScfObject;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ScopeError {
@@ -18,14 +18,7 @@ pub enum ScopeError {
 }
 
 pub struct Scope<'a> {
-    scf: &'a Scf<'a>,
-    handle: NonNull<libscf_sys::scf_scope_t>,
-}
-
-impl Drop for Scope<'_> {
-    fn drop(&mut self) {
-        unsafe { libscf_sys::scf_scope_destroy(self.handle.as_ptr()) };
-    }
+    handle: ScfObject<'a, libscf_sys::scf_scope_t>,
 }
 
 impl<'a> Scope<'a> {
@@ -33,18 +26,14 @@ impl<'a> Scope<'a> {
         let handle =
             scf.scf_scope_create().map_err(ScopeError::HandleCreate)?;
 
-        // Construct the Scope object immediately so we clean up on drop on any
-        // error below.
-        let scope = Self { scf, handle };
-
-        unsafe { scf.scf_get_scope_local(scope.handle.as_ptr()) }
+        unsafe { scf.scf_get_scope_local(handle.as_ptr()) }
             .map_err(ScopeError::GetLocalScope)?;
 
-        Ok(scope)
+        Ok(Scope { handle })
     }
 
     pub(crate) fn scf(&self) -> &'a Scf<'a> {
-        self.scf
+        self.handle.scf()
     }
 
     pub(crate) unsafe fn scf_get_service(
