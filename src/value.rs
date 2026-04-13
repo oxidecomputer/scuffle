@@ -2,12 +2,16 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::LibscfError;
 use crate::Property;
 use crate::Scf;
-use crate::ScfStringError;
 use crate::buf::scf_get_string;
 use crate::buf::with_scf_value_buf;
+use crate::error::ErrorPath;
+use crate::error::GetValueError;
+use crate::error::IterEntity;
+use crate::error::IterError;
+use crate::error::LibscfError;
+use crate::error::SetValueError;
 use crate::iter::ScfIter;
 use crate::scf::ScfObject;
 use chrono::DateTime;
@@ -18,7 +22,6 @@ use oxnet::IpNet;
 use oxnet::Ipv4Net;
 use oxnet::Ipv6Net;
 use std::ffi::CString;
-use std::ffi::NulError;
 use std::fmt;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
@@ -30,115 +33,6 @@ use proptest::prelude::any;
 use proptest::strategy::Strategy as _;
 #[cfg(any(test, feature = "testing"))]
 use test_strategy::Arbitrary;
-
-#[derive(Debug, thiserror::Error)]
-#[error("failed to create value")]
-pub struct CreateValueError(#[source] pub LibscfError);
-
-#[derive(Debug, thiserror::Error)]
-pub enum SetValueError {
-    #[error(
-        "failed to set value `{}` on internal libscf value",
-        value.display_smf(),
-    )]
-    Set {
-        value: Value,
-        #[source]
-        err: LibscfError,
-    },
-
-    #[error("invalid string value {value:?}")]
-    InvalidString {
-        value: String,
-        #[source]
-        err: NulError,
-    },
-
-    #[error(
-        "invalid subsecond nanos in timestamp {timestamp} ({seconds}.{nanos:09})"
-    )]
-    InvalidTimestampNanos { timestamp: DateTime<Utc>, seconds: i64, nanos: u32 },
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum GetValueError {
-    #[error("unexpected scf type value: {0}")]
-    UnexpectedTypeValue(i32),
-
-    #[error("value is invalid")]
-    Invalid(#[source] LibscfError),
-
-    #[error("error getting value as boolean")]
-    GetBool(#[source] LibscfError),
-
-    #[error("error getting value as count")]
-    GetCount(#[source] LibscfError),
-
-    #[error("error getting value as integer")]
-    GetInteger(#[source] LibscfError),
-
-    #[error("error getting value as time")]
-    GetTime(#[source] LibscfError),
-
-    #[error("timestamp value from scf is invalid: {secs}.{nanos:09}")]
-    InvalidTime { secs: i64, nanos: i32 },
-
-    #[error("error getting value as opaque")]
-    GetOpaque(#[source] LibscfError),
-
-    #[error("error getting value as opaque: got out of bounds length {0}")]
-    GetOpaqueOutOfBounds(usize),
-
-    #[error("error getting value as string")]
-    GetAsString(#[from] ScfStringError),
-
-    #[error("invalid net address v4 value: {0}")]
-    InvalidNetAddrV4(String),
-
-    #[error("invalid net address v6 value: {0}")]
-    InvalidNetAddrV6(String),
-
-    #[error("invalid net address value: {0}")]
-    InvalidNetAddr(String),
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum ValuesError {
-    #[error("error creating iterator over `{parent}`")]
-    CreateIter {
-        parent: String,
-        #[source]
-        err: LibscfError,
-    },
-
-    #[error("error initializing iterator over `{parent}`")]
-    InitIter {
-        parent: String,
-        #[source]
-        err: LibscfError,
-    },
-
-    #[error("error creating value to iterate over `{parent}`")]
-    CreateValue {
-        parent: String,
-        #[source]
-        err: CreateValueError,
-    },
-
-    #[error("error iterating values of `{parent}`")]
-    Iterating {
-        parent: String,
-        #[source]
-        err: LibscfError,
-    },
-
-    #[error("error converting value while iterating `{parent}`")]
-    GetValue {
-        parent: String,
-        #[source]
-        err: GetValueError,
-    },
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(any(test, feature = "testing"), derive(Arbitrary))]
@@ -330,8 +224,8 @@ pub(crate) struct ScfValue<'a> {
 }
 
 impl<'scf> ScfValue<'scf> {
-    pub(crate) fn new(scf: &'scf Scf<'scf>) -> Result<Self, CreateValueError> {
-        let handle = scf.scf_value_create().map_err(CreateValueError)?;
+    pub(crate) fn new(scf: &'scf Scf<'scf>) -> Result<Self, LibscfError> {
+        let handle = scf.scf_value_create()?;
         Ok(Self { handle })
     }
 }
@@ -638,10 +532,11 @@ impl<'a, St> Values<'a, St> {
     pub(crate) fn new(
         parent: &'a Property<'a, St>,
         iter: ScfIter<'a, libscf_sys::scf_value_t>,
-    ) -> Result<Self, ValuesError> {
+    ) -> Result<Self, IterError> {
         let value = ScfValue::new(parent.scf()).map_err(|err| {
-            ValuesError::CreateValue {
-                parent: parent.to_description_for_error(),
+            IterError::CreateItem {
+                entity: IterEntity::Value,
+                parent: parent.error_path(),
                 err,
             }
         })?;
@@ -650,7 +545,7 @@ impl<'a, St> Values<'a, St> {
 }
 
 impl<'a, St> Iterator for Values<'a, St> {
-    type Item = Result<Value, ValuesError>;
+    type Item = Result<Value, IterError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // Reset the ScfValue we're using as the destination for the next
@@ -662,13 +557,15 @@ impl<'a, St> Iterator for Values<'a, St> {
         let result = unsafe { self.iter.try_next(self.value.handle.as_ptr()) }?;
         match result {
             Ok(()) => {
-                Some(self.value.get().map_err(|err| ValuesError::GetValue {
-                    parent: self.parent.to_description_for_error(),
+                Some(self.value.get().map_err(|err| IterError::GetValue {
+                    entity: IterEntity::Value,
+                    parent: self.parent.error_path(),
                     err,
                 }))
             }
-            Err(err) => Some(Err(ValuesError::Iterating {
-                parent: self.parent.to_description_for_error(),
+            Err(err) => Some(Err(IterError::Iterating {
+                entity: IterEntity::Value,
+                parent: self.parent.error_path(),
                 err,
             })),
         }

@@ -2,35 +2,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::LibscfError;
+use crate::error::LibscfError;
+use crate::error::ScfStringError;
 use crate::limit;
 use crate::utf8cstring::Utf8CString;
 use std::cell::RefCell;
 use std::ffi::CStr;
-use std::ffi::FromBytesWithNulError;
-use std::str::Utf8Error;
-
-#[derive(Debug, thiserror::Error)]
-pub enum ScfStringError {
-    #[error(
-        "libscf returned {kind} of length {scf_len} \
-         (expected at most {max_len})"
-    )]
-    OutOfBounds { kind: &'static str, scf_len: usize, max_len: usize },
-
-    #[error("error getting {kind} as string")]
-    Get {
-        kind: &'static str,
-        #[source]
-        err: LibscfError,
-    },
-
-    #[error("received invalid C string from libscf")]
-    InvalidCString(#[from] FromBytesWithNulError),
-
-    #[error("received non-UTF8 string from libscf")]
-    NonUtf8String(#[from] Utf8Error),
-}
 
 pub(crate) fn scf_get_name<F>(f: F) -> Result<Utf8CString, ScfStringError>
 where

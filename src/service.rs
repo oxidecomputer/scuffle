@@ -2,43 +2,21 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::LibscfError;
 use crate::PropertyGroup;
 use crate::PropertyGroupEditable;
-use crate::PropertyGroupError;
 use crate::PropertyGroups;
-use crate::PropertyGroupsError;
 use crate::Scf;
 use crate::Scope;
+use crate::error::ErrorPath;
+use crate::error::IterEntity;
+use crate::error::IterError;
+use crate::error::LibscfError;
+use crate::error::LookupEntity;
+use crate::error::LookupError;
 use crate::iter::ScfUninitializedIter;
 use crate::scf::ScfObject;
 use crate::utf8cstring::Utf8CString;
-use std::ffi::NulError;
 use std::marker::PhantomData;
-
-#[derive(Debug, thiserror::Error)]
-pub enum ServiceError {
-    #[error("invalid service name {name:?}")]
-    InvalidName {
-        name: String,
-        #[source]
-        err: NulError,
-    },
-
-    #[error("error creating handle for service `{name}`")]
-    HandleCreate {
-        name: String,
-        #[source]
-        err: LibscfError,
-    },
-
-    #[error("failed getting service `{name}`")]
-    GetService {
-        name: String,
-        #[source]
-        err: LibscfError,
-    },
-}
 
 pub struct Service<'a> {
     // Lifetime that binds us to the parent `Scope`, ensuring we outlive it.
@@ -51,13 +29,23 @@ impl<'a> Service<'a> {
     pub(crate) fn new(
         scope: &'a Scope<'a>,
         name: &str,
-    ) -> Result<Option<Self>, ServiceError> {
+    ) -> Result<Option<Self>, LookupError> {
         let name = Utf8CString::from_str(name).map_err(|err| {
-            ServiceError::InvalidName { name: name.to_string(), err }
+            LookupError::InvalidName {
+                entity: LookupEntity::Service,
+                parent: None,
+                name: name.to_string(),
+                err,
+            }
         })?;
 
         let handle = scope.scf().scf_service_create().map_err(|err| {
-            ServiceError::HandleCreate { name: name.to_string(), err }
+            LookupError::HandleCreate {
+                entity: LookupEntity::Service,
+                parent: None,
+                name: name.to_string(),
+                err,
+            }
         })?;
 
         let result = unsafe {
@@ -67,9 +55,12 @@ impl<'a> Service<'a> {
         match result {
             Ok(()) => Ok(Some(Self { _scope: PhantomData, handle, name })),
             Err(LibscfError::NotFound) => Ok(None),
-            Err(err) => {
-                Err(ServiceError::GetService { name: name.into_string(), err })
-            }
+            Err(err) => Err(LookupError::Get {
+                entity: LookupEntity::Service,
+                parent: None,
+                name: name.into_string(),
+                err,
+            }),
         }
     }
 
@@ -90,31 +81,38 @@ impl<'a> Service<'a> {
     pub fn name(&self) -> &str {
         self.name.as_str()
     }
+}
 
+impl ErrorPath for Service<'_> {
+    fn error_path(&self) -> String {
+        self.name().to_string()
+    }
+}
+
+impl<'a> Service<'a> {
     pub fn property_group(
         &self,
         name: &str,
-    ) -> Result<
-        Option<PropertyGroup<'_, PropertyGroupEditable>>,
-        PropertyGroupError,
-    > {
+    ) -> Result<Option<PropertyGroup<'_, PropertyGroupEditable>>, LookupError>
+    {
         PropertyGroup::from_service(self, name)
     }
 
     pub fn property_groups(
         &self,
-    ) -> Result<PropertyGroups<'_, PropertyGroupEditable>, PropertyGroupsError>
-    {
+    ) -> Result<PropertyGroups<'_, PropertyGroupEditable>, IterError> {
         let iter = ScfUninitializedIter::new(self.scf()).map_err(|err| {
-            PropertyGroupsError::CreateIter {
-                parent: self.name().to_string(),
+            IterError::CreateIter {
+                entity: IterEntity::PropertyGroup,
+                parent: self.error_path(),
                 err,
             }
         })?;
         let iter =
             unsafe { iter.init_service_property_groups(self.handle.as_ptr()) }
-                .map_err(|err| PropertyGroupsError::InitIter {
-                    parent: self.name().to_string(),
+                .map_err(|err| IterError::InitIter {
+                    entity: IterEntity::PropertyGroup,
+                    parent: self.error_path(),
                     err,
                 })?;
         Ok(PropertyGroups::from_service(self, iter))

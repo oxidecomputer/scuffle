@@ -2,20 +2,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::LibscfError;
 use crate::Scf;
 use crate::Service;
-use crate::ServiceError;
+use crate::error::LibscfError;
+use crate::error::LookupError;
+use crate::error::ScopeError;
 use crate::scf::ScfObject;
-
-#[derive(Debug, thiserror::Error)]
-pub enum ScopeError {
-    #[error("error creating scope handle")]
-    HandleCreate(#[source] LibscfError),
-
-    #[error("error getting local scope")]
-    GetLocalScope(#[source] LibscfError),
-}
 
 pub struct Scope<'a> {
     handle: ScfObject<'a, libscf_sys::scf_scope_t>,
@@ -53,7 +45,7 @@ impl<'a> Scope<'a> {
     pub fn service(
         &self,
         name: &str,
-    ) -> Result<Option<Service<'_>>, ServiceError> {
+    ) -> Result<Option<Service<'_>>, LookupError> {
         Service::new(self, name)
     }
 }

@@ -16,7 +16,7 @@
 //! point.
 
 use super::Scf;
-use crate::LibscfError;
+use crate::error::LibscfError;
 use std::ptr::NonNull;
 
 mod sealed {

@@ -2,16 +2,15 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::CreateValueError;
-use crate::LibscfError;
 use crate::Scope;
-use crate::ScopeError;
-use crate::SetValueError;
 use crate::ValueRef;
+use crate::error::LibscfError;
+use crate::error::RefreshError;
+use crate::error::ScfError;
+use crate::error::ScopeError;
 use crate::value::ScfValue;
 use std::ffi::CStr;
 use std::ffi::CString;
-use std::ffi::NulError;
 use std::marker::PhantomData;
 use std::ptr::NonNull;
 
@@ -22,90 +21,10 @@ pub(crate) use object::ScfObject;
 #[cfg(any(test, feature = "testing"))]
 use crate::isolated::IsolatedConfigd;
 
-#[cfg(any(test, feature = "testing"))]
-use crate::isolated::IsolatedConfigdRefreshError;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Zone<'a> {
     Global,
     NonGlobal(&'a str),
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum ScfError {
-    #[error("error creating scf handle")]
-    HandleCreate(#[source] LibscfError),
-
-    #[error("error binding scf handle")]
-    HandleBind(#[source] LibscfError),
-
-    #[error(
-        "error creating zone name value for zone {zonename} during connect"
-    )]
-    CreateZoneName {
-        zonename: String,
-        #[source]
-        err: CreateValueError,
-    },
-
-    #[error("error setting zone name to {zonename} during connect")]
-    SetZoneName {
-        zonename: String,
-        #[source]
-        err: SetValueError,
-    },
-
-    #[error("error setting decoration to attach to zone {zonename}")]
-    SetDecorationZoneName {
-        zonename: String,
-        #[source]
-        err: LibscfError,
-    },
-
-    #[cfg(any(test, feature = "testing"))]
-    #[error("error creating door path value to {door_path} during connect")]
-    CreateDoorPath {
-        door_path: String,
-        #[source]
-        err: CreateValueError,
-    },
-
-    #[cfg(any(test, feature = "testing"))]
-    #[error("error setting door path to {door_path} during connect")]
-    SetDoorPath {
-        door_path: String,
-        #[source]
-        err: SetValueError,
-    },
-
-    #[cfg(any(test, feature = "testing"))]
-    #[error("error setting decoration to connect to door {door_path}")]
-    SetDecorationDoorPath {
-        door_path: String,
-        #[source]
-        err: LibscfError,
-    },
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum RefreshError {
-    #[error("invalid fmri {fmri:?}")]
-    InvalidFmri {
-        fmri: String,
-        #[source]
-        err: NulError,
-    },
-
-    #[error("failed to refresh fmri `{fmri}`")]
-    Failed {
-        fmri: String,
-        #[source]
-        err: LibscfError,
-    },
-
-    #[cfg(any(test, feature = "testing"))]
-    #[error("failed to refresh isolated svc.configd")]
-    Isolated(#[from] IsolatedConfigdRefreshError),
 }
 
 // We intentionally do not impl `Send` or `Sync` for `Scf`. Errors flow out

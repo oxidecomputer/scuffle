@@ -2,8 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::LibscfError;
 use crate::Scf;
+use crate::error::LibscfError;
 use crate::scf::ScfObject;
 use std::marker::PhantomData;
 
