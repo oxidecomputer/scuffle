@@ -5,6 +5,8 @@
 use crate::LibscfError;
 use crate::Property;
 use crate::Scf;
+use crate::ScfStringError;
+use crate::buf::scf_get_string;
 use crate::buf::with_scf_value_buf;
 use crate::iter::ScfIter;
 use chrono::DateTime;
@@ -14,9 +16,7 @@ use num_traits::FromPrimitive;
 use oxnet::IpNet;
 use oxnet::Ipv4Net;
 use oxnet::Ipv6Net;
-use std::ffi::CStr;
 use std::ffi::CString;
-use std::ffi::FromBytesWithNulError;
 use std::ffi::NulError;
 use std::fmt;
 use std::marker::PhantomData;
@@ -24,7 +24,6 @@ use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
 use std::ptr::NonNull;
-use std::str::Utf8Error;
 
 #[cfg(any(test, feature = "testing"))]
 use proptest::prelude::any;
@@ -92,16 +91,7 @@ pub enum GetValueError {
     GetOpaqueOutOfBounds(usize),
 
     #[error("error getting value as string")]
-    GetAsString(#[source] LibscfError),
-
-    #[error("error getting value as string: got out of bounds length {0}")]
-    GetAsStringOutOfBounds(usize),
-
-    #[error("error getting value as string: invalid C string")]
-    GetAsStringInvalidCStr(#[from] FromBytesWithNulError),
-
-    #[error("error getting value as string: not UTF8")]
-    GetAsStringNotUtf8(#[from] Utf8Error),
+    GetAsString(#[from] ScfStringError),
 
     #[error("invalid net address v4 value: {0}")]
     InvalidNetAddrV4(String),
@@ -373,30 +363,18 @@ impl ScfValue<'_> {
 
     pub(crate) fn get(&self) -> Result<Value, GetValueError> {
         // Helper function for all the scf types for which we have to fetch
-        // strings (and possibly then do additional parsing). This handles
-        // extracting a Rust string from what libscf writes to `buf`.
+        // strings. Uses the libscf-to-Rust-string support provided by
+        // `crate::buf::*`.
         fn get_as_string(
             ptr: *mut libscf_sys::scf_value_t,
-            buf: &mut [u8],
-        ) -> Result<&str, GetValueError> {
-            let sz = LibscfError::from_ssize(unsafe {
-                libscf_sys::scf_value_get_as_string(
-                    ptr,
-                    buf.as_mut_ptr().cast::<libc::c_char>(),
-                    buf.len(),
-                )
+        ) -> Result<String, GetValueError> {
+            with_scf_value_buf(|buf| {
+                scf_get_string("value", buf, |buf, buf_len| unsafe {
+                    libscf_sys::scf_value_get_as_string(ptr, buf, buf_len)
+                })
             })
-            .map_err(GetValueError::GetAsString)?;
-
-            // per the manpage, `sz` is equivalent to `strlen(s)` of the
-            // returned string, so we need to add 1 to pick up the Nul byte
-            // before constructing a `CStr`.
-            if sz + 1 > buf.len() {
-                return Err(GetValueError::GetAsStringOutOfBounds(sz));
-            }
-            let cstr = CStr::from_bytes_with_nul(&buf[..sz + 1])?;
-
-            Ok(cstr.to_str()?)
+            .map(|s| s.into_string())
+            .map_err(From::from)
         }
 
         let ptr = self.handle.as_ptr();
@@ -466,32 +444,20 @@ impl ScfValue<'_> {
                     Ok(Value::Opaque(buf[..sz].to_vec()))
                 }
             }),
-            scf_type_t::SCF_TYPE_ASTRING => with_scf_value_buf(|buf| {
-                let s = get_as_string(ptr, buf)?;
-                Ok(Value::AString(s.to_owned()))
-            }),
-            scf_type_t::SCF_TYPE_USTRING => with_scf_value_buf(|buf| {
-                let s = get_as_string(ptr, buf)?;
-                Ok(Value::UString(s.to_owned()))
-            }),
-            scf_type_t::SCF_TYPE_URI => with_scf_value_buf(|buf| {
-                let s = get_as_string(ptr, buf)?;
-                Ok(Value::Uri(s.to_owned()))
-            }),
-            scf_type_t::SCF_TYPE_FMRI => with_scf_value_buf(|buf| {
-                let s = get_as_string(ptr, buf)?;
-                Ok(Value::Fmri(s.to_owned()))
-            }),
-            scf_type_t::SCF_TYPE_HOST => with_scf_value_buf(|buf| {
-                let s = get_as_string(ptr, buf)?;
-                Ok(Value::Host(s.to_owned()))
-            }),
-            scf_type_t::SCF_TYPE_HOSTNAME => with_scf_value_buf(|buf| {
-                let s = get_as_string(ptr, buf)?;
-                Ok(Value::Hostname(s.to_owned()))
-            }),
-            scf_type_t::SCF_TYPE_NET_ADDR_V4 => with_scf_value_buf(|buf| {
-                let s = get_as_string(ptr, buf)?;
+            scf_type_t::SCF_TYPE_ASTRING => {
+                Ok(Value::AString(get_as_string(ptr)?))
+            }
+            scf_type_t::SCF_TYPE_USTRING => {
+                Ok(Value::UString(get_as_string(ptr)?))
+            }
+            scf_type_t::SCF_TYPE_URI => Ok(Value::Uri(get_as_string(ptr)?)),
+            scf_type_t::SCF_TYPE_FMRI => Ok(Value::Fmri(get_as_string(ptr)?)),
+            scf_type_t::SCF_TYPE_HOST => Ok(Value::Host(get_as_string(ptr)?)),
+            scf_type_t::SCF_TYPE_HOSTNAME => {
+                Ok(Value::Hostname(get_as_string(ptr)?))
+            }
+            scf_type_t::SCF_TYPE_NET_ADDR_V4 => {
+                let s = get_as_string(ptr)?;
                 // libscf allows bare IP addresses or IP addresses with a
                 // /prefix; try bare IPs first then fall back to ipnets.
                 if let Ok(ip) = s.parse() {
@@ -499,29 +465,29 @@ impl ScfValue<'_> {
                 } else if let Ok(ipnet) = s.parse() {
                     Ok(Value::NetV4(ipnet))
                 } else {
-                    Err(GetValueError::InvalidNetAddrV4(s.to_owned()))
+                    Err(GetValueError::InvalidNetAddrV4(s))
                 }
-            }),
-            scf_type_t::SCF_TYPE_NET_ADDR_V6 => with_scf_value_buf(|buf| {
-                let s = get_as_string(ptr, buf)?;
+            }
+            scf_type_t::SCF_TYPE_NET_ADDR_V6 => {
+                let s = get_as_string(ptr)?;
                 if let Ok(ip) = s.parse() {
                     Ok(Value::NetAddrV6(ip))
                 } else if let Ok(ipnet) = s.parse() {
                     Ok(Value::NetV6(ipnet))
                 } else {
-                    Err(GetValueError::InvalidNetAddrV6(s.to_owned()))
+                    Err(GetValueError::InvalidNetAddrV6(s))
                 }
-            }),
-            scf_type_t::SCF_TYPE_NET_ADDR => with_scf_value_buf(|buf| {
-                let s = get_as_string(ptr, buf)?;
+            }
+            scf_type_t::SCF_TYPE_NET_ADDR => {
+                let s = get_as_string(ptr)?;
                 if let Ok(ip) = s.parse() {
                     Ok(Value::NetAddr(ip))
                 } else if let Ok(ipnet) = s.parse() {
                     Ok(Value::Net(ipnet))
                 } else {
-                    Err(GetValueError::InvalidNetAddr(s.to_owned()))
+                    Err(GetValueError::InvalidNetAddr(s))
                 }
-            }),
+            }
         }
     }
 

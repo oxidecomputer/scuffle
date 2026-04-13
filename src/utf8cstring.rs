@@ -28,6 +28,10 @@ impl Utf8CString {
     pub(crate) fn as_str(&self) -> &str {
         self.0.to_str().expect("Utf8CString always contains valid UTF8")
     }
+
+    pub(crate) fn into_string(self) -> String {
+        self.0.into_string().expect("Utf8CString always contains valid UTF8")
+    }
 }
 
 impl fmt::Display for Utf8CString {

@@ -39,7 +39,7 @@ where
     with_scf_name_buf(move |buf| scf_get_string("name", buf, f))
 }
 
-fn scf_get_string<F>(
+pub(crate) fn scf_get_string<F>(
     kind: &'static str,
     buf: &mut [u8],
     f: F,
