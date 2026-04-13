@@ -10,10 +10,10 @@ use crate::ScfStringError;
 use crate::Service;
 use crate::buf::scf_get_name;
 use crate::iter::ScfIter;
+use crate::scf::ScfObject;
 use crate::utf8cstring::Utf8CString;
 use std::ffi::NulError;
 use std::marker::PhantomData;
-use std::ptr::NonNull;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PropertyGroupError {
@@ -83,49 +83,20 @@ pub enum PropertyGroupsError {
     },
 }
 
-struct ScfPropertyGroup<'a> {
-    parent: PropertyGroupParent<'a>,
-    handle: NonNull<libscf_sys::scf_propertygroup_t>,
-}
-
-impl Drop for ScfPropertyGroup<'_> {
-    fn drop(&mut self) {
-        unsafe { libscf_sys::scf_pg_destroy(self.handle.as_ptr()) };
-    }
-}
-
-impl<'a> ScfPropertyGroup<'a> {
-    fn new(parent: PropertyGroupParent<'a>) -> Result<Self, LibscfError> {
-        let handle = parent.scf().scf_property_group_create()?;
-        Ok(Self { parent, handle })
-    }
-
-    fn as_ptr(&self) -> *mut libscf_sys::scf_propertygroup_t {
-        self.handle.as_ptr()
-    }
-
-    fn name(&self) -> Result<Utf8CString, ScfStringError> {
-        scf_get_name(|out_buf, out_len| unsafe {
-            libscf_sys::scf_pg_get_name(self.handle.as_ptr(), out_buf, out_len)
-        })
-    }
-}
-
 pub enum PropertyGroupEditable {}
 pub enum PropertyGroupSnapshot {}
 
 pub struct PropertyGroup<'a, St> {
-    handle: ScfPropertyGroup<'a>,
+    parent: PropertyGroupParent<'a>,
     name: Utf8CString,
+    handle: ScfObject<'a, libscf_sys::scf_propertygroup_t>,
     _state: PhantomData<fn() -> St>,
 }
 
 // Methods available on all property groups.
 impl<'a, St> PropertyGroup<'a, St> {
     pub(crate) fn scf(&self) -> &'a Scf<'a> {
-        match self.handle.parent {
-            PropertyGroupParent::Service(service) => service.scf(),
-        }
+        self.handle.scf()
     }
 
     pub(crate) unsafe fn scf_get_property(
@@ -143,7 +114,7 @@ impl<'a, St> PropertyGroup<'a, St> {
     }
 
     pub(crate) fn to_description_for_error(&self) -> String {
-        match self.handle.parent {
+        match self.parent {
             PropertyGroupParent::Service(service) => {
                 format!("{}/:properties/{}", service.name(), self.name())
             }
@@ -172,26 +143,29 @@ impl<'a> PropertyGroup<'a, PropertyGroupEditable> {
             PropertyGroupError::InvalidName { name: name.to_string(), err }
         })?;
 
-        let handle =
-            ScfPropertyGroup::new(PropertyGroupParent::Service(service))
-                .map_err(|err| PropertyGroupError::HandleCreate {
-                    parent: service.name().to_string(),
-                    name: name.to_string(),
-                    err,
-                })?;
-
-        let pg = Self { handle, name, _state: PhantomData };
+        let handle = service.scf().scf_pg_create().map_err(|err| {
+            PropertyGroupError::HandleCreate {
+                parent: service.name().to_string(),
+                name: name.to_string(),
+                err,
+            }
+        })?;
 
         let result = unsafe {
-            service.scf_get_pg(pg.name.as_c_str().as_ptr(), pg.handle.as_ptr())
+            service.scf_get_pg(name.as_c_str().as_ptr(), handle.as_ptr())
         };
 
         match result {
-            Ok(()) => Ok(Some(pg)),
+            Ok(()) => Ok(Some(Self {
+                parent: PropertyGroupParent::Service(service),
+                name,
+                handle,
+                _state: PhantomData,
+            })),
             Err(LibscfError::NotFound) => Ok(None),
             Err(err) => Err(PropertyGroupError::Get {
                 parent: service.name().to_string(),
-                name: pg.name.to_string(),
+                name: name.into_string(),
                 err,
             }),
         }
@@ -240,7 +214,7 @@ impl<'a, St> Iterator for PropertyGroups<'a, St> {
     type Item = Result<PropertyGroup<'a, St>, PropertyGroupsError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let handle = match ScfPropertyGroup::new(self.parent) {
+        let handle = match self.parent.scf().scf_pg_create() {
             Ok(handle) => handle,
             Err(err) => {
                 return Some(Err(PropertyGroupsError::CreatePropertyGroup {
@@ -259,16 +233,26 @@ impl<'a, St> Iterator for PropertyGroups<'a, St> {
             })
             .and_then(|()| {
                 // `handle` has been filled in; get its name.
-                handle.name().map_err(|err| PropertyGroupsError::GetName {
+                scf_get_name(|out_buf, out_len| unsafe {
+                    libscf_sys::scf_pg_get_name(
+                        handle.as_ptr(),
+                        out_buf,
+                        out_len,
+                    )
+                })
+                .map_err(|err| PropertyGroupsError::GetName {
                     parent: self.parent.to_description_for_error(),
                     err,
                 })
             });
 
         match result {
-            Ok(name) => {
-                Some(Ok(PropertyGroup { handle, name, _state: PhantomData }))
-            }
+            Ok(name) => Some(Ok(PropertyGroup {
+                parent: self.parent,
+                handle,
+                name,
+                _state: PhantomData,
+            })),
             Err(err) => Some(Err(err)),
         }
     }

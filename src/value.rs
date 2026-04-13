@@ -9,6 +9,7 @@ use crate::ScfStringError;
 use crate::buf::scf_get_string;
 use crate::buf::with_scf_value_buf;
 use crate::iter::ScfIter;
+use crate::scf::ScfObject;
 use chrono::DateTime;
 use chrono::Utc;
 use libscf_sys::scf_type_t;
@@ -19,11 +20,9 @@ use oxnet::Ipv6Net;
 use std::ffi::CString;
 use std::ffi::NulError;
 use std::fmt;
-use std::marker::PhantomData;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::Ipv6Addr;
-use std::ptr::NonNull;
 
 #[cfg(any(test, feature = "testing"))]
 use proptest::prelude::any;
@@ -326,23 +325,14 @@ impl fmt::Display for ValueDisplaySmf<'_> {
     }
 }
 
-pub(crate) struct ScfValue<'scf> {
-    // Phantom data referring to the `Scf` handle within which we were
-    // created; this ensures we won't outlive our enclosing handle.
-    _scf: PhantomData<&'scf ()>,
-    handle: NonNull<libscf_sys::scf_value_t>,
-}
-
-impl Drop for ScfValue<'_> {
-    fn drop(&mut self) {
-        unsafe { libscf_sys::scf_value_destroy(self.handle.as_ptr()) };
-    }
+pub(crate) struct ScfValue<'a> {
+    handle: ScfObject<'a, libscf_sys::scf_value_t>,
 }
 
 impl<'scf> ScfValue<'scf> {
     pub(crate) fn new(scf: &'scf Scf<'scf>) -> Result<Self, CreateValueError> {
         let handle = scf.scf_value_create().map_err(CreateValueError)?;
-        Ok(Self { _scf: PhantomData, handle })
+        Ok(Self { handle })
     }
 }
 

@@ -9,9 +9,9 @@ use crate::Value;
 use crate::Values;
 use crate::ValuesError;
 use crate::iter::ScfUninitializedIter;
+use crate::scf::ScfObject;
 use crate::utf8cstring::Utf8CString;
 use std::ffi::NulError;
-use std::ptr::NonNull;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PropertyError {
@@ -54,13 +54,7 @@ pub enum SingleValueError {
 pub struct Property<'a, St> {
     property_group: &'a PropertyGroup<'a, St>,
     name: Utf8CString,
-    handle: NonNull<libscf_sys::scf_property_t>,
-}
-
-impl<St> Drop for Property<'_, St> {
-    fn drop(&mut self) {
-        unsafe { libscf_sys::scf_property_destroy(self.handle.as_ptr()) };
-    }
+    handle: ScfObject<'a, libscf_sys::scf_property_t>,
 }
 
 impl<'a, St> Property<'a, St> {
@@ -80,21 +74,20 @@ impl<'a, St> Property<'a, St> {
                     err,
                 }
             })?;
-        let prop = Self { property_group, name, handle };
 
         let result = unsafe {
             property_group.scf_get_property(
-                prop.name.as_c_str().as_ptr(),
-                prop.handle.as_ptr(),
+                name.as_c_str().as_ptr(),
+                handle.as_ptr(),
             )
         };
 
         match result {
-            Ok(()) => Ok(Some(prop)),
+            Ok(()) => Ok(Some(Self { property_group, name, handle })),
             Err(LibscfError::NotFound) => Ok(None),
             Err(err) => Err(PropertyError::Get {
                 parent: property_group.to_description_for_error(),
-                name: prop.name.to_string(),
+                name: name.into_string(),
                 err,
             }),
         }
