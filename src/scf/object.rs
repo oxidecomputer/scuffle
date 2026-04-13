@@ -55,11 +55,12 @@ macro_rules! impl_scf_type {
     };
 }
 
+impl_scf_type!(scf_instance_t, scf_instance_create, scf_instance_destroy);
+impl_scf_type!(scf_iter_t, scf_iter_create, scf_iter_destroy);
 impl_scf_type!(scf_scope_t, scf_scope_create, scf_scope_destroy);
 impl_scf_type!(scf_service_t, scf_service_create, scf_service_destroy);
 impl_scf_type!(scf_property_t, scf_property_create, scf_property_destroy);
 impl_scf_type!(scf_propertygroup_t, scf_pg_create, scf_pg_destroy);
-impl_scf_type!(scf_iter_t, scf_iter_create, scf_iter_destroy);
 impl_scf_type!(scf_value_t, scf_value_create, scf_value_destroy);
 
 pub(crate) struct ScfObject<'scf, T: sealed::ScfObjectType> {

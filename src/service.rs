@@ -2,6 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use crate::Instance;
+use crate::Instances;
 use crate::PropertyGroup;
 use crate::PropertyGroupEditable;
 use crate::PropertyGroups;
@@ -78,18 +80,48 @@ impl<'a> Service<'a> {
         })
     }
 
+    pub(crate) unsafe fn scf_get_instance(
+        &self,
+        name: *const i8,
+        instance: *mut libscf_sys::scf_instance_t,
+    ) -> Result<(), LibscfError> {
+        LibscfError::from_ret(unsafe {
+            libscf_sys::scf_service_get_instance(
+                self.handle.as_ptr(),
+                name,
+                instance,
+            )
+        })
+    }
+
     pub fn name(&self) -> &str {
         self.name.as_str()
     }
-}
 
-impl ErrorPath for Service<'_> {
-    fn error_path(&self) -> String {
-        self.name().to_string()
+    pub fn instance(
+        &self,
+        name: &str,
+    ) -> Result<Option<Instance<'_>>, LookupError> {
+        Instance::new(self, name)
     }
-}
 
-impl<'a> Service<'a> {
+    pub fn instances(&self) -> Result<Instances<'_>, IterError> {
+        let iter = ScfUninitializedIter::new(self.scf()).map_err(|err| {
+            IterError::CreateIter {
+                entity: IterEntity::Instance,
+                parent: self.error_path(),
+                err,
+            }
+        })?;
+        let iter = unsafe { iter.init_service_instances(self.handle.as_ptr()) }
+            .map_err(|err| IterError::InitIter {
+                entity: IterEntity::Instance,
+                parent: self.error_path(),
+                err,
+            })?;
+        Ok(Instances::new(self, iter))
+    }
+
     pub fn property_group(
         &self,
         name: &str,
@@ -116,5 +148,11 @@ impl<'a> Service<'a> {
                     err,
                 })?;
         Ok(PropertyGroups::from_service(self, iter))
+    }
+}
+
+impl ErrorPath for Service<'_> {
+    fn error_path(&self) -> String {
+        self.name().to_string()
     }
 }

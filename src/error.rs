@@ -27,6 +27,7 @@ pub(crate) trait ErrorPath {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LookupEntity {
+    Instance,
     Service,
     PropertyGroup,
     Property,
@@ -35,9 +36,10 @@ pub enum LookupEntity {
 impl fmt::Display for LookupEntity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            LookupEntity::Service => f.write_str("service"),
-            LookupEntity::PropertyGroup => f.write_str("property group"),
-            LookupEntity::Property => f.write_str("property"),
+            Self::Instance => f.write_str("instance"),
+            Self::Service => f.write_str("service"),
+            Self::PropertyGroup => f.write_str("property group"),
+            Self::Property => f.write_str("property"),
         }
     }
 }
@@ -81,6 +83,7 @@ fn format_parent(parent: &Option<String>) -> String {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IterEntity {
+    Instance,
     PropertyGroup,
     Property,
     Value,
@@ -89,9 +92,10 @@ pub enum IterEntity {
 impl fmt::Display for IterEntity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            IterEntity::PropertyGroup => f.write_str("property group"),
-            IterEntity::Property => f.write_str("property"),
-            IterEntity::Value => f.write_str("value"),
+            Self::Instance => f.write_str("instance"),
+            Self::PropertyGroup => f.write_str("property group"),
+            Self::Property => f.write_str("property"),
+            Self::Value => f.write_str("value"),
         }
     }
 }

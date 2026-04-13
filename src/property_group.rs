@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use crate::Instance;
 use crate::Properties;
 use crate::Property;
 use crate::Scf;
@@ -31,6 +32,46 @@ pub struct PropertyGroup<'a, St> {
 
 // Methods available on all property groups.
 impl<'a, St> PropertyGroup<'a, St> {
+    fn from_parent(
+        parent: PropertyGroupParent<'a>,
+        name: &str,
+    ) -> Result<Option<Self>, LookupError> {
+        let name = Utf8CString::from_str(name).map_err(|err| {
+            LookupError::InvalidName {
+                entity: LookupEntity::PropertyGroup,
+                parent: Some(parent.error_path()),
+                name: name.to_string(),
+                err,
+            }
+        })?;
+
+        let handle = parent.scf().scf_pg_create().map_err(|err| {
+            LookupError::HandleCreate {
+                entity: LookupEntity::PropertyGroup,
+                parent: Some(parent.error_path()),
+                name: name.to_string(),
+                err,
+            }
+        })?;
+
+        let result = unsafe {
+            parent.scf_get_pg(name.as_c_str().as_ptr(), handle.as_ptr())
+        };
+
+        match result {
+            Ok(()) => {
+                Ok(Some(Self { parent, name, handle, _state: PhantomData }))
+            }
+            Err(LibscfError::NotFound) => Ok(None),
+            Err(err) => Err(LookupError::Get {
+                entity: LookupEntity::PropertyGroup,
+                parent: Some(parent.error_path()),
+                name: name.into_string(),
+                err,
+            }),
+        }
+    }
+
     pub(crate) fn scf(&self) -> &'a Scf<'a> {
         self.handle.scf()
     }
@@ -92,55 +133,41 @@ impl<'a> PropertyGroup<'a, PropertyGroupEditable> {
         service: &'a Service<'a>,
         name: &str,
     ) -> Result<Option<Self>, LookupError> {
-        let name = Utf8CString::from_str(name).map_err(|err| {
-            LookupError::InvalidName {
-                entity: LookupEntity::PropertyGroup,
-                parent: Some(service.error_path()),
-                name: name.to_string(),
-                err,
-            }
-        })?;
+        Self::from_parent(PropertyGroupParent::Service(service), name)
+    }
 
-        let handle = service.scf().scf_pg_create().map_err(|err| {
-            LookupError::HandleCreate {
-                entity: LookupEntity::PropertyGroup,
-                parent: Some(service.error_path()),
-                name: name.to_string(),
-                err,
-            }
-        })?;
-
-        let result = unsafe {
-            service.scf_get_pg(name.as_c_str().as_ptr(), handle.as_ptr())
-        };
-
-        match result {
-            Ok(()) => Ok(Some(Self {
-                parent: PropertyGroupParent::Service(service),
-                name,
-                handle,
-                _state: PhantomData,
-            })),
-            Err(LibscfError::NotFound) => Ok(None),
-            Err(err) => Err(LookupError::Get {
-                entity: LookupEntity::PropertyGroup,
-                parent: Some(service.error_path()),
-                name: name.into_string(),
-                err,
-            }),
-        }
+    pub(crate) fn from_instance(
+        instance: &'a Instance<'a>,
+        name: &str,
+    ) -> Result<Option<Self>, LookupError> {
+        Self::from_parent(PropertyGroupParent::Instance(instance), name)
     }
 }
 
 #[derive(Clone, Copy)]
 enum PropertyGroupParent<'a> {
     Service(&'a Service<'a>),
+    Instance(&'a Instance<'a>),
 }
 
 impl<'a> PropertyGroupParent<'a> {
     fn scf(&self) -> &'a Scf<'a> {
         match self {
-            PropertyGroupParent::Service(service) => service.scf(),
+            Self::Service(service) => service.scf(),
+            Self::Instance(instance) => instance.scf(),
+        }
+    }
+
+    unsafe fn scf_get_pg(
+        &self,
+        name: *const libc::c_char,
+        pg: *mut libscf_sys::scf_propertygroup_t,
+    ) -> Result<(), LibscfError> {
+        match self {
+            Self::Service(service) => unsafe { service.scf_get_pg(name, pg) },
+            Self::Instance(instance) => unsafe {
+                instance.scf_get_pg(name, pg)
+            },
         }
     }
 }
@@ -148,7 +175,8 @@ impl<'a> PropertyGroupParent<'a> {
 impl ErrorPath for PropertyGroupParent<'_> {
     fn error_path(&self) -> String {
         match self {
-            PropertyGroupParent::Service(service) => service.error_path(),
+            Self::Service(service) => service.error_path(),
+            Self::Instance(instance) => instance.error_path(),
         }
     }
 }
@@ -166,6 +194,17 @@ impl<'a, St> PropertyGroups<'a, St> {
     ) -> Self {
         Self {
             parent: PropertyGroupParent::Service(service),
+            iter,
+            _state: PhantomData,
+        }
+    }
+
+    pub(crate) fn from_instance(
+        instance: &'a Instance<'a>,
+        iter: ScfIter<'a, libscf_sys::scf_propertygroup_t>,
+    ) -> Self {
+        Self {
+            parent: PropertyGroupParent::Instance(instance),
             iter,
             _state: PhantomData,
         }
