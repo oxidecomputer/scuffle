@@ -2,15 +2,13 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use std::cell::Cell;
+use crate::LibscfError;
+use crate::limit;
+use crate::utf8cstring::Utf8CString;
 use std::cell::RefCell;
 use std::ffi::CStr;
 use std::ffi::FromBytesWithNulError;
 use std::str::Utf8Error;
-use std::thread::LocalKey;
-
-use crate::LibscfError;
-use crate::utf8cstring::Utf8CString;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ScfStringError {
@@ -82,16 +80,7 @@ pub(crate) fn with_scf_value_buf<F, T>(f: F) -> T
 where
     F: FnOnce(&mut [u8]) -> T,
 {
-    thread_local! {
-        static MAX_VALUE_LEN: Cell<Option<usize>> = const { Cell::new(None) };
-    }
-
-    let len = cache_max_len_plus_1(
-        &MAX_VALUE_LEN,
-        libscf_sys::SCF_LIMIT_MAX_VALUE_LENGTH,
-    );
-
-    with_buf(f, len)
+    with_buf(f, *limit::SCF_LIMIT_MAX_VALUE_LENGTH + 1)
 }
 
 /// Run a closure with access to a thread-local buffer sized to
@@ -103,16 +92,7 @@ pub(crate) fn with_scf_name_buf<F, T>(f: F) -> T
 where
     F: FnOnce(&mut [u8]) -> T,
 {
-    thread_local! {
-        static MAX_NAME_LEN: Cell<Option<usize>> = const { Cell::new(None) };
-    }
-
-    let len = cache_max_len_plus_1(
-        &MAX_NAME_LEN,
-        libscf_sys::SCF_LIMIT_MAX_NAME_LENGTH,
-    );
-
-    with_buf(f, len)
+    with_buf(f, *limit::SCF_LIMIT_MAX_NAME_LENGTH + 1)
 }
 
 /// Run a closure with access to a thread-local buffer sized to
@@ -125,47 +105,7 @@ pub(crate) fn with_scf_fmri_buf<F, T>(f: F) -> T
 where
     F: FnOnce(&mut [u8]) -> T,
 {
-    thread_local! {
-        static MAX_FMRI_LEN: Cell<Option<usize>> = const { Cell::new(None) };
-    }
-
-    let len = cache_max_len_plus_1(
-        &MAX_FMRI_LEN,
-        libscf_sys::SCF_LIMIT_MAX_FMRI_LENGTH,
-    );
-
-    with_buf(f, len)
-}
-
-fn cache_max_len_plus_1(
-    max_len_tlocal: &'static LocalKey<Cell<Option<usize>>>,
-    limit_id: u32,
-) -> usize {
-    max_len_tlocal.with(|maybe_cached| {
-        if let Some(len) = maybe_cached.get() {
-            return len;
-        }
-
-        let sz = unsafe { libscf_sys::scf_limit(limit_id) };
-
-        // scf_limit() is documented as only failing if we pass an unknown
-        // argument; this is a private function that we only call with
-        // defined constants, so it should never fail. If the constant
-        // values change or are out of sync, we should catch that
-        // immediately in testing.
-        assert!(
-            sz > 0,
-            "unexpected return value from scf_limit({limit_id}): {sz}"
-        );
-
-        // Add one to account for the Nul byte (manpage for scf_limit notes it
-        // returns values _without_ room for the Nul byte).
-        let sz = sz as usize + 1;
-
-        maybe_cached.set(Some(sz));
-
-        sz
-    })
+    with_buf(f, *limit::SCF_LIMIT_MAX_FMRI_LENGTH + 1)
 }
 
 fn with_buf<F, T>(f: F, max_len: usize) -> T
