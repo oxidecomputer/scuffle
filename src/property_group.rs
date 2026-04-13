@@ -3,6 +3,8 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::LibscfError;
+use crate::Properties;
+use crate::PropertiesError;
 use crate::Property;
 use crate::PropertyError;
 use crate::Scf;
@@ -10,6 +12,7 @@ use crate::ScfStringError;
 use crate::Service;
 use crate::buf::scf_get_name;
 use crate::iter::ScfIter;
+use crate::iter::ScfUninitializedIter;
 use crate::scf::ScfObject;
 use crate::utf8cstring::Utf8CString;
 use std::ffi::NulError;
@@ -130,6 +133,23 @@ impl<'a, St> PropertyGroup<'a, St> {
         name: &str,
     ) -> Result<Option<Property<'_, St>>, PropertyError> {
         Property::from_property_group(self, name)
+    }
+
+    pub fn properties(&self) -> Result<Properties<'_, St>, PropertiesError> {
+        let iter = ScfUninitializedIter::new(self.scf()).map_err(|err| {
+            PropertiesError::CreateIter {
+                parent: self.to_description_for_error(),
+                err,
+            }
+        })?;
+        let iter = unsafe {
+            iter.init_property_group_properties(self.handle.as_ptr())
+        }
+        .map_err(|err| PropertiesError::InitIter {
+            parent: self.to_description_for_error(),
+            err,
+        })?;
+        Ok(Properties::new(self, iter))
     }
 }
 

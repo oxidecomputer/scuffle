@@ -5,9 +5,12 @@
 use crate::LibscfError;
 use crate::PropertyGroup;
 use crate::Scf;
+use crate::ScfStringError;
 use crate::Value;
 use crate::Values;
 use crate::ValuesError;
+use crate::buf::scf_get_name;
+use crate::iter::ScfIter;
 use crate::iter::ScfUninitializedIter;
 use crate::scf::ScfObject;
 use crate::utf8cstring::Utf8CString;
@@ -51,6 +54,44 @@ pub enum SingleValueError {
     ValuesError(#[from] ValuesError),
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum PropertiesError {
+    #[error("error creating iterator over `{parent}`")]
+    CreateIter {
+        parent: String,
+        #[source]
+        err: LibscfError,
+    },
+
+    #[error("error initializing iterator over `{parent}`")]
+    InitIter {
+        parent: String,
+        #[source]
+        err: LibscfError,
+    },
+
+    #[error("error creating property while iterating over `{parent}`")]
+    CreateProperty {
+        parent: String,
+        #[source]
+        err: LibscfError,
+    },
+
+    #[error("error iterating properties of `{parent}`")]
+    Iterating {
+        parent: String,
+        #[source]
+        err: LibscfError,
+    },
+
+    #[error("error getting name of property while iterating over `{parent}`")]
+    GetName {
+        parent: String,
+        #[source]
+        err: ScfStringError,
+    },
+}
+
 pub struct Property<'a, St> {
     property_group: &'a PropertyGroup<'a, St>,
     name: Utf8CString,
@@ -76,10 +117,8 @@ impl<'a, St> Property<'a, St> {
             })?;
 
         let result = unsafe {
-            property_group.scf_get_property(
-                name.as_c_str().as_ptr(),
-                handle.as_ptr(),
-            )
+            property_group
+                .scf_get_property(name.as_c_str().as_ptr(), handle.as_ptr())
         };
 
         match result {
@@ -138,6 +177,67 @@ impl<'a, St> Property<'a, St> {
                 description: self.to_description_for_error(),
             }),
             Some(Err(err)) => Err(err.into()),
+        }
+    }
+}
+
+pub struct Properties<'a, St> {
+    property_group: &'a PropertyGroup<'a, St>,
+    iter: ScfIter<'a, libscf_sys::scf_property_t>,
+}
+
+impl<'a, St> Properties<'a, St> {
+    pub(crate) fn new(
+        property_group: &'a PropertyGroup<'a, St>,
+        iter: ScfIter<'a, libscf_sys::scf_property_t>,
+    ) -> Self {
+        Self { property_group, iter }
+    }
+}
+
+impl<'a, St> Iterator for Properties<'a, St> {
+    type Item = Result<Property<'a, St>, PropertiesError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let handle = match self.property_group.scf().scf_property_create() {
+            Ok(handle) => handle,
+            Err(err) => {
+                return Some(Err(PropertiesError::CreateProperty {
+                    parent: self.property_group.to_description_for_error(),
+                    err,
+                }));
+            }
+        };
+
+        // Fill in `handle` with next item from the internal iterator; on
+        // success, also get the property's name.
+        let result = unsafe { self.iter.try_next(handle.as_ptr()) }?
+            .map_err(|err| PropertiesError::Iterating {
+                parent: self.property_group.to_description_for_error(),
+                err,
+            })
+            .and_then(|()| {
+                // `handle` has been filled in; get its name.
+                scf_get_name(|out_buf, out_len| unsafe {
+                    libscf_sys::scf_property_get_name(
+                        handle.as_ptr(),
+                        out_buf,
+                        out_len,
+                    )
+                })
+                .map_err(|err| PropertiesError::GetName {
+                    parent: self.property_group.to_description_for_error(),
+                    err,
+                })
+            });
+
+        match result {
+            Ok(name) => Some(Ok(Property {
+                property_group: self.property_group,
+                handle,
+                name,
+            })),
+            Err(err) => Some(Err(err)),
         }
     }
 }

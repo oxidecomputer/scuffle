@@ -7,14 +7,16 @@ use crate::Scf;
 use crate::scf::ScfObject;
 use std::marker::PhantomData;
 
-pub(crate) trait ScfIterable {
-    unsafe fn try_next(
-        iter: *mut libscf_sys::scf_iter_t,
-        uninitialized_item: *mut Self,
-    ) -> libc::c_int;
+mod sealed {
+    pub(crate) trait ScfIterable {
+        unsafe fn try_next(
+            iter: *mut libscf_sys::scf_iter_t,
+            uninitialized_item: *mut Self,
+        ) -> libc::c_int;
+    }
 }
 
-impl ScfIterable for libscf_sys::scf_value_t {
+impl sealed::ScfIterable for libscf_sys::scf_value_t {
     unsafe fn try_next(
         iter: *mut libscf_sys::scf_iter_t,
         uninitialized_item: *mut Self,
@@ -23,12 +25,21 @@ impl ScfIterable for libscf_sys::scf_value_t {
     }
 }
 
-impl ScfIterable for libscf_sys::scf_propertygroup_t {
+impl sealed::ScfIterable for libscf_sys::scf_propertygroup_t {
     unsafe fn try_next(
         iter: *mut libscf_sys::scf_iter_t,
         uninitialized_item: *mut Self,
     ) -> libc::c_int {
         unsafe { libscf_sys::scf_iter_next_pg(iter, uninitialized_item) }
+    }
+}
+
+impl sealed::ScfIterable for libscf_sys::scf_property_t {
+    unsafe fn try_next(
+        iter: *mut libscf_sys::scf_iter_t,
+        uninitialized_item: *mut Self,
+    ) -> libc::c_int {
+        unsafe { libscf_sys::scf_iter_next_property(iter, uninitialized_item) }
     }
 }
 
@@ -60,6 +71,16 @@ impl<'a> ScfUninitializedIter<'a> {
         })?;
         Ok(ScfIter { handle: self.handle, _inner: PhantomData })
     }
+
+    pub(crate) unsafe fn init_property_group_properties(
+        self,
+        pg: *const libscf_sys::scf_propertygroup_t,
+    ) -> Result<ScfIter<'a, libscf_sys::scf_property_t>, LibscfError> {
+        LibscfError::from_ret(unsafe {
+            libscf_sys::scf_iter_pg_properties(self.handle.as_ptr(), pg)
+        })?;
+        Ok(ScfIter { handle: self.handle, _inner: PhantomData })
+    }
 }
 
 pub(crate) struct ScfIter<'a, T> {
@@ -67,7 +88,7 @@ pub(crate) struct ScfIter<'a, T> {
     _inner: PhantomData<fn() -> T>,
 }
 
-impl<'a, T: ScfIterable> ScfIter<'a, T> {
+impl<'a, T: sealed::ScfIterable> ScfIter<'a, T> {
     pub(crate) unsafe fn try_next(
         &mut self,
         out: *mut T,

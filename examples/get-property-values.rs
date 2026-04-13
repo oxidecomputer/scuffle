@@ -4,6 +4,8 @@
 
 use anyhow::bail;
 use clap::Parser;
+use scuffle::Property;
+use scuffle::PropertyGroup;
 use scuffle::Scf;
 use scuffle::Zone;
 
@@ -11,8 +13,25 @@ use scuffle::Zone;
 #[command(about = "Print the values of an SMF service property")]
 struct Args {
     service: String,
-    property_group: String,
-    property: String,
+    property_group: Option<String>,
+    #[arg(requires = "property_group")]
+    property: Option<String>,
+}
+
+fn print_property_values<St>(prop: &Property<'_, St>) -> anyhow::Result<()> {
+    for value in prop.values()? {
+        let value = value?;
+        println!("{} {}", prop.name(), value.display_smf());
+    }
+    Ok(())
+}
+
+fn print_properties<St>(pg: &PropertyGroup<'_, St>) -> anyhow::Result<()> {
+    for prop in pg.properties()? {
+        let prop = prop?;
+        print_property_values(&prop)?;
+    }
+    Ok(())
 }
 
 fn main() -> anyhow::Result<()> {
@@ -25,24 +44,32 @@ fn main() -> anyhow::Result<()> {
         bail!("service `{}` not found", service);
     };
 
-    let Some(pg) = service.property_group(&property_group)? else {
-        bail!(
-            "property group `{property_group}` not found in service `{}`",
-            service.name(),
-        );
-    };
+    if let Some(property_group) = property_group {
+        let Some(pg) = service.property_group(&property_group)? else {
+            bail!(
+                "property group `{property_group}` not found in service `{}`",
+                service.name(),
+            );
+        };
 
-    let Some(prop) = pg.property(&property)? else {
-        bail!(
-            "property `{property}` not found in `{}/:properties/{}`",
-            service.name(),
-            pg.name(),
-        );
-    };
-
-    for value in prop.values()? {
-        let value = value?;
-        println!("{}", value.display_smf());
+        if let Some(property) = property {
+            let Some(prop) = pg.property(&property)? else {
+                bail!(
+                    "property `{property}` not found in `{}/:properties/{}`",
+                    service.name(),
+                    pg.name(),
+                );
+            };
+            print_property_values(&prop)?;
+        } else {
+            print_properties(&pg)?;
+        }
+    } else {
+        for pg in service.property_groups()? {
+            let pg = pg?;
+            println!("-- property group {} --", pg.name());
+            print_properties(&pg)?;
+        }
     }
 
     Ok(())

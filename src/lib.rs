@@ -19,6 +19,8 @@ pub mod isolated;
 
 pub use buf::ScfStringError;
 pub use error::LibscfError;
+pub use property::Properties;
+pub use property::PropertiesError;
 pub use property::Property;
 pub use property::PropertyError;
 pub use property::SingleValueError;
