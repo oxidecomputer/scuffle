@@ -42,7 +42,7 @@ impl<'a> Service<'a> {
             }
         })?;
 
-        let handle = scope.scf().scf_service_create().map_err(|err| {
+        let mut handle = scope.scf().scf_service_create().map_err(|err| {
             LookupError::HandleCreate {
                 entity: LookupEntity::Service,
                 parent: None,
@@ -52,7 +52,7 @@ impl<'a> Service<'a> {
         })?;
 
         let result = unsafe {
-            scope.scf_get_service(name.as_c_str().as_ptr(), handle.as_ptr())
+            scope.scf_get_service(name.as_c_str().as_ptr(), handle.as_mut_ptr())
         };
 
         match result {

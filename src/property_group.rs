@@ -45,7 +45,7 @@ impl<'a, St> PropertyGroup<'a, St> {
             }
         })?;
 
-        let handle = parent.scf().scf_pg_create().map_err(|err| {
+        let mut handle = parent.scf().scf_pg_create().map_err(|err| {
             LookupError::HandleCreate {
                 entity: LookupEntity::PropertyGroup,
                 parent: Some(parent.error_path()),
@@ -55,7 +55,7 @@ impl<'a, St> PropertyGroup<'a, St> {
         })?;
 
         let result = unsafe {
-            parent.scf_get_pg(name.as_c_str().as_ptr(), handle.as_ptr())
+            parent.scf_get_pg(name.as_c_str().as_ptr(), handle.as_mut_ptr())
         };
 
         match result {

@@ -37,17 +37,19 @@ impl<'a> Snapshot<'a> {
             }
         })?;
 
-        let handle = instance.scf().scf_snapshot_create().map_err(|err| {
-            LookupError::HandleCreate {
-                entity: LookupEntity::Snapshot,
-                parent: Some(instance.error_path()),
-                name: name.to_string(),
-                err,
-            }
-        })?;
+        let mut handle =
+            instance.scf().scf_snapshot_create().map_err(|err| {
+                LookupError::HandleCreate {
+                    entity: LookupEntity::Snapshot,
+                    parent: Some(instance.error_path()),
+                    name: name.to_string(),
+                    err,
+                }
+            })?;
 
         let result = unsafe {
-            instance.scf_get_snapshot(name.as_c_str().as_ptr(), handle.as_ptr())
+            instance
+                .scf_get_snapshot(name.as_c_str().as_ptr(), handle.as_mut_ptr())
         };
 
         match result {

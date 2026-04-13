@@ -38,7 +38,7 @@ impl<'a, St> Property<'a, St> {
             }
         })?;
 
-        let handle =
+        let mut handle =
             property_group.scf().scf_property_create().map_err(|err| {
                 LookupError::HandleCreate {
                     entity: LookupEntity::Property,
@@ -50,7 +50,7 @@ impl<'a, St> Property<'a, St> {
 
         let result = unsafe {
             property_group
-                .scf_get_property(name.as_c_str().as_ptr(), handle.as_ptr())
+                .scf_get_property(name.as_c_str().as_ptr(), handle.as_mut_ptr())
         };
 
         match result {

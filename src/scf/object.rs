@@ -84,7 +84,11 @@ impl<'a, T: ScfObjectType> ScfObject<'a, T> {
         self.scf
     }
 
-    pub(crate) fn as_ptr(&self) -> *mut T {
+    pub(crate) fn as_ptr(&self) -> *const T {
+        self.handle.as_ptr()
+    }
+
+    pub(crate) fn as_mut_ptr(&mut self) -> *mut T {
         self.handle.as_ptr()
     }
 }

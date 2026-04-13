@@ -41,17 +41,19 @@ impl<'a> Instance<'a> {
             }
         })?;
 
-        let handle = service.scf().scf_instance_create().map_err(|err| {
-            LookupError::HandleCreate {
-                entity: LookupEntity::Instance,
-                parent: Some(service.error_path()),
-                name: name.to_string(),
-                err,
-            }
-        })?;
+        let mut handle =
+            service.scf().scf_instance_create().map_err(|err| {
+                LookupError::HandleCreate {
+                    entity: LookupEntity::Instance,
+                    parent: Some(service.error_path()),
+                    name: name.to_string(),
+                    err,
+                }
+            })?;
 
         let result = unsafe {
-            service.scf_get_instance(name.as_c_str().as_ptr(), handle.as_ptr())
+            service
+                .scf_get_instance(name.as_c_str().as_ptr(), handle.as_mut_ptr())
         };
 
         match result {

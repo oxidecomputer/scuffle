@@ -136,22 +136,25 @@ impl<'a> ScfUninitializedIter<'a> {
     }
 
     pub(crate) unsafe fn init_property_values(
-        self,
+        mut self,
         property: *const libscf_sys::scf_property_t,
     ) -> Result<ScfIter<'a, libscf_sys::scf_value_t>, LibscfError> {
         LibscfError::from_ret(unsafe {
-            libscf_sys::scf_iter_property_values(self.handle.as_ptr(), property)
+            libscf_sys::scf_iter_property_values(
+                self.handle.as_mut_ptr(),
+                property,
+            )
         })?;
         Ok(ScfIter { handle: self.handle, _inner: PhantomData })
     }
 
     pub(crate) unsafe fn init_service_instances(
-        self,
+        mut self,
         service: *const libscf_sys::scf_service_t,
     ) -> Result<ScfIter<'a, libscf_sys::scf_instance_t>, LibscfError> {
         LibscfError::from_ret(unsafe {
             libscf_sys::scf_iter_service_instances(
-                self.handle.as_ptr(),
+                self.handle.as_mut_ptr(),
                 service,
             )
         })?;
@@ -159,33 +162,36 @@ impl<'a> ScfUninitializedIter<'a> {
     }
 
     pub(crate) unsafe fn init_service_property_groups(
-        self,
+        mut self,
         service: *const libscf_sys::scf_service_t,
     ) -> Result<ScfIter<'a, libscf_sys::scf_propertygroup_t>, LibscfError> {
         LibscfError::from_ret(unsafe {
-            libscf_sys::scf_iter_service_pgs(self.handle.as_ptr(), service)
+            libscf_sys::scf_iter_service_pgs(self.handle.as_mut_ptr(), service)
         })?;
         Ok(ScfIter { handle: self.handle, _inner: PhantomData })
     }
 
     pub(crate) unsafe fn init_instance_property_groups(
-        self,
+        mut self,
         instance: *const libscf_sys::scf_instance_t,
     ) -> Result<ScfIter<'a, libscf_sys::scf_propertygroup_t>, LibscfError> {
         LibscfError::from_ret(unsafe {
-            libscf_sys::scf_iter_instance_pgs(self.handle.as_ptr(), instance)
+            libscf_sys::scf_iter_instance_pgs(
+                self.handle.as_mut_ptr(),
+                instance,
+            )
         })?;
         Ok(ScfIter { handle: self.handle, _inner: PhantomData })
     }
 
     pub(crate) unsafe fn init_instance_property_groups_composed(
-        self,
+        mut self,
         instance: *const libscf_sys::scf_instance_t,
         snapshot: *const libscf_sys::scf_snapshot_t,
     ) -> Result<ScfIter<'a, libscf_sys::scf_propertygroup_t>, LibscfError> {
         LibscfError::from_ret(unsafe {
             libscf_sys::scf_iter_instance_pgs_composed(
-                self.handle.as_ptr(),
+                self.handle.as_mut_ptr(),
                 instance,
                 snapshot,
             )
@@ -194,12 +200,12 @@ impl<'a> ScfUninitializedIter<'a> {
     }
 
     pub(crate) unsafe fn init_instance_snapshots(
-        self,
+        mut self,
         instance: *const libscf_sys::scf_instance_t,
     ) -> Result<ScfIter<'a, libscf_sys::scf_snapshot_t>, LibscfError> {
         LibscfError::from_ret(unsafe {
             libscf_sys::scf_iter_instance_snapshots(
-                self.handle.as_ptr(),
+                self.handle.as_mut_ptr(),
                 instance,
             )
         })?;
@@ -207,11 +213,11 @@ impl<'a> ScfUninitializedIter<'a> {
     }
 
     pub(crate) unsafe fn init_property_group_properties(
-        self,
+        mut self,
         pg: *const libscf_sys::scf_propertygroup_t,
     ) -> Result<ScfIter<'a, libscf_sys::scf_property_t>, LibscfError> {
         LibscfError::from_ret(unsafe {
-            libscf_sys::scf_iter_pg_properties(self.handle.as_ptr(), pg)
+            libscf_sys::scf_iter_pg_properties(self.handle.as_mut_ptr(), pg)
         })?;
         Ok(ScfIter { handle: self.handle, _inner: PhantomData })
     }
@@ -226,12 +232,14 @@ impl<'a, T: sealed::ScfIterable> ScfIter<'a, T> {
     pub(crate) fn next_with_handle<P>(
         &mut self,
         parent: &P,
-        handle: &ScfObject<'a, T>,
+        handle: &mut ScfObject<'a, T>,
     ) -> Option<Result<(), IterError>>
     where
         P: ErrorPath,
     {
-        match unsafe { T::try_next(self.handle.as_ptr(), handle.as_ptr()) } {
+        match unsafe {
+            T::try_next(self.handle.as_mut_ptr(), handle.as_mut_ptr())
+        } {
             0 => None,
             1 => Some(Ok(())),
             _ => Some(Err(IterError::Iterating {
@@ -253,7 +261,7 @@ impl<'a, T: sealed::ScfNamedIterable> ScfIter<'a, T> {
         P: ErrorPath,
         F: FnOnce() -> Result<ScfObject<'a, T>, LibscfError>,
     {
-        let handle = match make_handle() {
+        let mut handle = match make_handle() {
             Ok(handle) => handle,
             Err(err) => {
                 return Some(Err(IterError::CreateItem {
@@ -264,7 +272,7 @@ impl<'a, T: sealed::ScfNamedIterable> ScfIter<'a, T> {
             }
         };
 
-        match self.next_with_handle(parent, &handle)? {
+        match self.next_with_handle(parent, &mut handle)? {
             Ok(()) => (),
             Err(err) => return Some(Err(err)),
         }

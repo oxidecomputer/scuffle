@@ -232,7 +232,7 @@ impl<'scf> ScfValue<'scf> {
 
 impl ScfValue<'_> {
     pub(crate) unsafe fn scf_apply_as_decoration(
-        &self,
+        &mut self,
         scf: *mut libscf_sys::scf_handle_t,
         decoration: *const i8,
     ) -> Result<(), LibscfError> {
@@ -240,7 +240,9 @@ impl ScfValue<'_> {
             libscf_sys::scf_handle_decorate(
                 scf,
                 decoration,
-                self.handle.as_ptr(),
+                // TODO-correctness Could this take a const pointer instead?
+                // Header takes non-const but I think it's read-only.
+                self.handle.as_mut_ptr(),
             )
         })
     }
@@ -250,7 +252,7 @@ impl ScfValue<'_> {
         // strings. Uses the libscf-to-Rust-string support provided by
         // `crate::buf::*`.
         fn get_as_string(
-            ptr: *mut libscf_sys::scf_value_t,
+            ptr: *const libscf_sys::scf_value_t,
         ) -> Result<String, GetValueError> {
             with_scf_value_buf(|buf| {
                 scf_get_string("value", buf, |buf, buf_len| unsafe {
@@ -404,7 +406,7 @@ impl ScfValue<'_> {
         // (statically guaranteeing it's actually infallible).
         let result = {
             use scf_type_t::*;
-            let ptr = self.handle.as_ptr();
+            let ptr = self.handle.as_mut_ptr();
             match value {
                 ValueRef::Bool(b) => {
                     () = unsafe {
@@ -552,9 +554,11 @@ impl<'a, St> Iterator for Values<'a, St> {
         // iterator item. We always return an owned `Value` or error, so don't
         // need to maintain the contents of `self.value` any longer than this
         // function. `scf_value_reset` is infallible.
-        () = unsafe { libscf_sys::scf_value_reset(self.value.handle.as_ptr()) };
+        () = unsafe {
+            libscf_sys::scf_value_reset(self.value.handle.as_mut_ptr())
+        };
 
-        match self.iter.next_with_handle(self.parent, &self.value.handle)? {
+        match self.iter.next_with_handle(self.parent, &mut self.value.handle)? {
             Ok(()) => {
                 Some(self.value.get().map_err(|err| IterError::GetValue {
                     entity: IterEntity::Value,
