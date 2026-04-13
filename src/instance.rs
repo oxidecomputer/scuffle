@@ -7,7 +7,6 @@ use crate::PropertyGroupEditable;
 use crate::PropertyGroups;
 use crate::Scf;
 use crate::Service;
-use crate::buf::scf_get_name;
 use crate::error::ErrorPath;
 use crate::error::IterEntity;
 use crate::error::IterError;
@@ -135,46 +134,16 @@ impl<'a> Iterator for Instances<'a> {
     type Item = Result<Instance<'a>, IterError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let handle = match self.service.scf().scf_instance_create() {
-            Ok(handle) => handle,
-            Err(err) => {
-                return Some(Err(IterError::CreateItem {
-                    entity: IterEntity::Instance,
-                    parent: self.service.error_path(),
-                    err,
-                }));
-            }
-        };
-
-        // Fill in `handle` with next item from the internal iterator; on
-        // success, also get the instance's name.
-        let result = unsafe { self.iter.try_next(handle.as_ptr()) }?
-            .map_err(|err| IterError::Iterating {
-                entity: IterEntity::Instance,
-                parent: self.service.error_path(),
-                err,
+        self.iter
+            .next_named(self.service, || {
+                self.service.scf().scf_instance_create()
             })
-            .and_then(|()| {
-                // `handle` has been filled in; get its name.
-                scf_get_name(|out_buf, out_len| unsafe {
-                    libscf_sys::scf_instance_get_name(
-                        handle.as_ptr(),
-                        out_buf,
-                        out_len,
-                    )
+            .map(|result| {
+                result.map(|(name, handle)| Instance {
+                    service: self.service,
+                    name,
+                    handle,
                 })
-                .map_err(|err| IterError::GetName {
-                    entity: IterEntity::Instance,
-                    parent: self.service.error_path(),
-                    err,
-                })
-            });
-
-        match result {
-            Ok(name) => {
-                Some(Ok(Instance { service: self.service, handle, name }))
-            }
-            Err(err) => Some(Err(err)),
-        }
+            })
     }
 }

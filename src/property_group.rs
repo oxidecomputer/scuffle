@@ -7,7 +7,6 @@ use crate::Properties;
 use crate::Property;
 use crate::Scf;
 use crate::Service;
-use crate::buf::scf_get_name;
 use crate::error::ErrorPath;
 use crate::error::IterEntity;
 use crate::error::IterError;
@@ -215,49 +214,15 @@ impl<'a, St> Iterator for PropertyGroups<'a, St> {
     type Item = Result<PropertyGroup<'a, St>, IterError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let handle = match self.parent.scf().scf_pg_create() {
-            Ok(handle) => handle,
-            Err(err) => {
-                return Some(Err(IterError::CreateItem {
-                    entity: IterEntity::PropertyGroup,
-                    parent: self.parent.error_path(),
-                    err,
-                }));
-            }
-        };
-
-        // Fill in `handle` with next item from the internal iterator; on
-        // success, also get the property group's name.
-        let result = unsafe { self.iter.try_next(handle.as_ptr()) }?
-            .map_err(|err| IterError::Iterating {
-                entity: IterEntity::PropertyGroup,
-                parent: self.parent.error_path(),
-                err,
+        self.iter
+            .next_named(&self.parent, || self.parent.scf().scf_pg_create())
+            .map(|result| {
+                result.map(|(name, handle)| PropertyGroup {
+                    parent: self.parent,
+                    name,
+                    handle,
+                    _state: PhantomData,
+                })
             })
-            .and_then(|()| {
-                // `handle` has been filled in; get its name.
-                scf_get_name(|out_buf, out_len| unsafe {
-                    libscf_sys::scf_pg_get_name(
-                        handle.as_ptr(),
-                        out_buf,
-                        out_len,
-                    )
-                })
-                .map_err(|err| IterError::GetName {
-                    entity: IterEntity::PropertyGroup,
-                    parent: self.parent.error_path(),
-                    err,
-                })
-            });
-
-        match result {
-            Ok(name) => Some(Ok(PropertyGroup {
-                parent: self.parent,
-                handle,
-                name,
-                _state: PhantomData,
-            })),
-            Err(err) => Some(Err(err)),
-        }
     }
 }

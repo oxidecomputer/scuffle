@@ -554,8 +554,7 @@ impl<'a, St> Iterator for Values<'a, St> {
         // function. `scf_value_reset` is infallible.
         () = unsafe { libscf_sys::scf_value_reset(self.value.handle.as_ptr()) };
 
-        let result = unsafe { self.iter.try_next(self.value.handle.as_ptr()) }?;
-        match result {
+        match self.iter.next_with_handle(self.parent, &self.value.handle)? {
             Ok(()) => {
                 Some(self.value.get().map_err(|err| IterError::GetValue {
                     entity: IterEntity::Value,
@@ -563,11 +562,7 @@ impl<'a, St> Iterator for Values<'a, St> {
                     err,
                 }))
             }
-            Err(err) => Some(Err(IterError::Iterating {
-                entity: IterEntity::Value,
-                parent: self.parent.error_path(),
-                err,
-            })),
+            Err(err) => Some(Err(err)),
         }
     }
 }

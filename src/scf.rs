@@ -17,6 +17,7 @@ use std::ptr::NonNull;
 mod object;
 
 pub(crate) use object::ScfObject;
+pub(crate) use object::ScfObjectType;
 
 #[cfg(any(test, feature = "testing"))]
 use crate::isolated::IsolatedConfigd;

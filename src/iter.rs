@@ -3,20 +3,37 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::Scf;
+use crate::buf::scf_get_name;
+use crate::error::ErrorPath;
+use crate::error::IterEntity;
+use crate::error::IterError;
 use crate::error::LibscfError;
 use crate::scf::ScfObject;
+use crate::utf8cstring::Utf8CString;
 use std::marker::PhantomData;
 
 mod sealed {
-    pub(crate) trait ScfIterable {
+    pub(crate) trait ScfIterable: crate::scf::ScfObjectType {
+        const ENTITY: crate::error::IterEntity;
+
         unsafe fn try_next(
             iter: *mut libscf_sys::scf_iter_t,
             uninitialized_item: *mut Self,
         ) -> libc::c_int;
     }
+
+    pub(crate) trait ScfNamedIterable: ScfIterable {
+        unsafe fn get_name(
+            item: *const Self,
+            buf: *mut libc::c_char,
+            buf_len: usize,
+        ) -> libc::ssize_t;
+    }
 }
 
 impl sealed::ScfIterable for libscf_sys::scf_value_t {
+    const ENTITY: IterEntity = IterEntity::Value;
+
     unsafe fn try_next(
         iter: *mut libscf_sys::scf_iter_t,
         uninitialized_item: *mut Self,
@@ -26,6 +43,8 @@ impl sealed::ScfIterable for libscf_sys::scf_value_t {
 }
 
 impl sealed::ScfIterable for libscf_sys::scf_propertygroup_t {
+    const ENTITY: IterEntity = IterEntity::PropertyGroup;
+
     unsafe fn try_next(
         iter: *mut libscf_sys::scf_iter_t,
         uninitialized_item: *mut Self,
@@ -34,7 +53,19 @@ impl sealed::ScfIterable for libscf_sys::scf_propertygroup_t {
     }
 }
 
+impl sealed::ScfNamedIterable for libscf_sys::scf_propertygroup_t {
+    unsafe fn get_name(
+        item: *const Self,
+        buf: *mut libc::c_char,
+        buf_len: usize,
+    ) -> libc::ssize_t {
+        unsafe { libscf_sys::scf_pg_get_name(item, buf, buf_len) }
+    }
+}
+
 impl sealed::ScfIterable for libscf_sys::scf_property_t {
+    const ENTITY: IterEntity = IterEntity::Property;
+
     unsafe fn try_next(
         iter: *mut libscf_sys::scf_iter_t,
         uninitialized_item: *mut Self,
@@ -43,12 +74,34 @@ impl sealed::ScfIterable for libscf_sys::scf_property_t {
     }
 }
 
+impl sealed::ScfNamedIterable for libscf_sys::scf_property_t {
+    unsafe fn get_name(
+        item: *const Self,
+        buf: *mut libc::c_char,
+        buf_len: usize,
+    ) -> libc::ssize_t {
+        unsafe { libscf_sys::scf_property_get_name(item, buf, buf_len) }
+    }
+}
+
 impl sealed::ScfIterable for libscf_sys::scf_instance_t {
+    const ENTITY: IterEntity = IterEntity::Instance;
+
     unsafe fn try_next(
         iter: *mut libscf_sys::scf_iter_t,
         uninitialized_item: *mut Self,
     ) -> libc::c_int {
         unsafe { libscf_sys::scf_iter_next_instance(iter, uninitialized_item) }
+    }
+}
+
+impl sealed::ScfNamedIterable for libscf_sys::scf_instance_t {
+    unsafe fn get_name(
+        item: *const Self,
+        buf: *mut libc::c_char,
+        buf_len: usize,
+    ) -> libc::ssize_t {
+        unsafe { libscf_sys::scf_instance_get_name(item, buf, buf_len) }
     }
 }
 
@@ -121,14 +174,65 @@ pub(crate) struct ScfIter<'a, T> {
 }
 
 impl<'a, T: sealed::ScfIterable> ScfIter<'a, T> {
-    pub(crate) unsafe fn try_next(
+    pub(crate) fn next_with_handle<P>(
         &mut self,
-        out: *mut T,
-    ) -> Option<Result<(), LibscfError>> {
-        match unsafe { T::try_next(self.handle.as_ptr(), out) } {
+        parent: &P,
+        handle: &ScfObject<'a, T>,
+    ) -> Option<Result<(), IterError>>
+    where
+        P: ErrorPath,
+    {
+        match unsafe { T::try_next(self.handle.as_ptr(), handle.as_ptr()) } {
             0 => None,
             1 => Some(Ok(())),
-            _ => Some(Err(LibscfError::last())),
+            _ => Some(Err(IterError::Iterating {
+                entity: T::ENTITY,
+                parent: parent.error_path(),
+                err: LibscfError::last(),
+            })),
         }
+    }
+}
+
+impl<'a, T: sealed::ScfNamedIterable> ScfIter<'a, T> {
+    pub(crate) fn next_named<F, P>(
+        &mut self,
+        parent: &P,
+        make_handle: F,
+    ) -> Option<Result<(Utf8CString, ScfObject<'a, T>), IterError>>
+    where
+        P: ErrorPath,
+        F: FnOnce() -> Result<ScfObject<'a, T>, LibscfError>,
+    {
+        let handle = match make_handle() {
+            Ok(handle) => handle,
+            Err(err) => {
+                return Some(Err(IterError::CreateItem {
+                    entity: T::ENTITY,
+                    parent: parent.error_path(),
+                    err,
+                }));
+            }
+        };
+
+        match self.next_with_handle(parent, &handle)? {
+            Ok(()) => (),
+            Err(err) => return Some(Err(err)),
+        }
+
+        let name = match scf_get_name(|buf, buf_len| unsafe {
+            T::get_name(handle.as_ptr(), buf, buf_len)
+        }) {
+            Ok(name) => name,
+            Err(err) => {
+                return Some(Err(IterError::GetName {
+                    entity: T::ENTITY,
+                    parent: parent.error_path(),
+                    err,
+                }));
+            }
+        };
+
+        Some(Ok((name, handle)))
     }
 }

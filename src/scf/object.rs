@@ -20,15 +20,19 @@ use crate::error::LibscfError;
 use std::ptr::NonNull;
 
 mod sealed {
-    pub(crate) trait ScfObjectType {
-        unsafe fn create(handle: *mut libscf_sys::scf_handle_t) -> *mut Self;
-        unsafe fn destroy(ptr: *mut Self);
-    }
+    pub(crate) trait Sealed {}
+}
+
+pub(crate) trait ScfObjectType: sealed::Sealed {
+    unsafe fn create(handle: *mut libscf_sys::scf_handle_t) -> *mut Self;
+    unsafe fn destroy(ptr: *mut Self);
 }
 
 macro_rules! impl_scf_type {
     ($type:ident, $create:ident, $destroy:ident) => {
-        impl sealed::ScfObjectType for libscf_sys::$type {
+        impl sealed::Sealed for libscf_sys::$type {}
+
+        impl ScfObjectType for libscf_sys::$type {
             unsafe fn create(
                 handle: *mut libscf_sys::scf_handle_t,
             ) -> *mut Self {
@@ -45,7 +49,7 @@ macro_rules! impl_scf_type {
                 &self,
             ) -> Result<ScfObject<'_, libscf_sys::$type>, LibscfError> {
                 let handle = LibscfError::from_ptr(unsafe {
-                    <libscf_sys::$type as sealed::ScfObjectType>::create(
+                    <libscf_sys::$type as ScfObjectType>::create(
                         self.handle.as_ptr(),
                     )
                 })?;
@@ -63,18 +67,18 @@ impl_scf_type!(scf_property_t, scf_property_create, scf_property_destroy);
 impl_scf_type!(scf_propertygroup_t, scf_pg_create, scf_pg_destroy);
 impl_scf_type!(scf_value_t, scf_value_create, scf_value_destroy);
 
-pub(crate) struct ScfObject<'scf, T: sealed::ScfObjectType> {
+pub(crate) struct ScfObject<'scf, T: ScfObjectType> {
     scf: &'scf Scf<'scf>,
     handle: NonNull<T>,
 }
 
-impl<T: sealed::ScfObjectType> Drop for ScfObject<'_, T> {
+impl<T: ScfObjectType> Drop for ScfObject<'_, T> {
     fn drop(&mut self) {
-        unsafe { <T as sealed::ScfObjectType>::destroy(self.handle.as_ptr()) };
+        unsafe { <T as ScfObjectType>::destroy(self.handle.as_ptr()) };
     }
 }
 
-impl<'a, T: sealed::ScfObjectType> ScfObject<'a, T> {
+impl<'a, T: ScfObjectType> ScfObject<'a, T> {
     pub(crate) fn scf(&self) -> &'a Scf<'a> {
         self.scf
     }
