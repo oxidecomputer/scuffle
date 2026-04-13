@@ -29,6 +29,7 @@ pub(crate) trait ErrorPath {
 pub enum LookupEntity {
     Instance,
     Service,
+    Snapshot,
     PropertyGroup,
     Property,
 }
@@ -38,6 +39,7 @@ impl fmt::Display for LookupEntity {
         match self {
             Self::Instance => f.write_str("instance"),
             Self::Service => f.write_str("service"),
+            Self::Snapshot => f.write_str("snapshot"),
             Self::PropertyGroup => f.write_str("property group"),
             Self::Property => f.write_str("property"),
         }
@@ -86,6 +88,7 @@ pub enum IterEntity {
     Instance,
     PropertyGroup,
     Property,
+    Snapshot,
     Value,
 }
 
@@ -95,6 +98,7 @@ impl fmt::Display for IterEntity {
             Self::Instance => f.write_str("instance"),
             Self::PropertyGroup => f.write_str("property group"),
             Self::Property => f.write_str("property"),
+            Self::Snapshot => f.write_str("snapshot"),
             Self::Value => f.write_str("value"),
         }
     }

@@ -105,6 +105,27 @@ impl sealed::ScfNamedIterable for libscf_sys::scf_instance_t {
     }
 }
 
+impl sealed::ScfIterable for libscf_sys::scf_snapshot_t {
+    const ENTITY: IterEntity = IterEntity::Snapshot;
+
+    unsafe fn try_next(
+        iter: *mut libscf_sys::scf_iter_t,
+        uninitialized_item: *mut Self,
+    ) -> libc::c_int {
+        unsafe { libscf_sys::scf_iter_next_snapshot(iter, uninitialized_item) }
+    }
+}
+
+impl sealed::ScfNamedIterable for libscf_sys::scf_snapshot_t {
+    unsafe fn get_name(
+        item: *const Self,
+        buf: *mut libc::c_char,
+        buf_len: usize,
+    ) -> libc::ssize_t {
+        unsafe { libscf_sys::scf_snapshot_get_name(item, buf, buf_len) }
+    }
+}
+
 pub(crate) struct ScfUninitializedIter<'a> {
     handle: ScfObject<'a, libscf_sys::scf_iter_t>,
 }
@@ -153,6 +174,34 @@ impl<'a> ScfUninitializedIter<'a> {
     ) -> Result<ScfIter<'a, libscf_sys::scf_propertygroup_t>, LibscfError> {
         LibscfError::from_ret(unsafe {
             libscf_sys::scf_iter_instance_pgs(self.handle.as_ptr(), instance)
+        })?;
+        Ok(ScfIter { handle: self.handle, _inner: PhantomData })
+    }
+
+    pub(crate) unsafe fn init_instance_property_groups_composed(
+        self,
+        instance: *const libscf_sys::scf_instance_t,
+        snapshot: *const libscf_sys::scf_snapshot_t,
+    ) -> Result<ScfIter<'a, libscf_sys::scf_propertygroup_t>, LibscfError> {
+        LibscfError::from_ret(unsafe {
+            libscf_sys::scf_iter_instance_pgs_composed(
+                self.handle.as_ptr(),
+                instance,
+                snapshot,
+            )
+        })?;
+        Ok(ScfIter { handle: self.handle, _inner: PhantomData })
+    }
+
+    pub(crate) unsafe fn init_instance_snapshots(
+        self,
+        instance: *const libscf_sys::scf_instance_t,
+    ) -> Result<ScfIter<'a, libscf_sys::scf_snapshot_t>, LibscfError> {
+        LibscfError::from_ret(unsafe {
+            libscf_sys::scf_iter_instance_snapshots(
+                self.handle.as_ptr(),
+                instance,
+            )
         })?;
         Ok(ScfIter { handle: self.handle, _inner: PhantomData })
     }

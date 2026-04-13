@@ -8,6 +8,8 @@ use crate::PropertyGroupEditable;
 use crate::PropertyGroups;
 use crate::Scf;
 use crate::Service;
+use crate::Snapshot;
+use crate::Snapshots;
 use crate::error::ErrorPath;
 use crate::error::IterEntity;
 use crate::error::IterError;
@@ -68,6 +70,20 @@ impl<'a> Instance<'a> {
         self.service.scf()
     }
 
+    pub(crate) unsafe fn scf_get_snapshot(
+        &self,
+        name: *const i8,
+        snapshot: *mut libscf_sys::scf_snapshot_t,
+    ) -> Result<(), LibscfError> {
+        LibscfError::from_ret(unsafe {
+            libscf_sys::scf_instance_get_snapshot(
+                self.handle.as_ptr(),
+                name,
+                snapshot,
+            )
+        })
+    }
+
     pub(crate) unsafe fn scf_get_pg(
         &self,
         name: *const i8,
@@ -78,8 +94,73 @@ impl<'a> Instance<'a> {
         })
     }
 
+    pub(crate) unsafe fn scf_get_pg_composed(
+        &self,
+        snapshot: *const libscf_sys::scf_snapshot_t,
+        name: *const i8,
+        pg: *mut libscf_sys::scf_propertygroup_t,
+    ) -> Result<(), LibscfError> {
+        LibscfError::from_ret(unsafe {
+            libscf_sys::scf_instance_get_pg_composed(
+                self.handle.as_ptr(),
+                snapshot,
+                name,
+                pg,
+            )
+        })
+    }
+
+    pub(crate) unsafe fn scf_iter_pgs_composed(
+        &self,
+        snapshot: *const libscf_sys::scf_snapshot_t,
+    ) -> Result<ScfIter<'_, libscf_sys::scf_propertygroup_t>, IterError> {
+        let iter = ScfUninitializedIter::new(self.scf()).map_err(|err| {
+            IterError::CreateIter {
+                entity: IterEntity::PropertyGroup,
+                parent: self.error_path(),
+                err,
+            }
+        })?;
+        unsafe {
+            iter.init_instance_property_groups_composed(
+                self.handle.as_ptr(),
+                snapshot,
+            )
+        }
+        .map_err(|err| IterError::InitIter {
+            entity: IterEntity::PropertyGroup,
+            parent: self.error_path(),
+            err,
+        })
+    }
+
     pub fn name(&self) -> &str {
         self.name.as_str()
+    }
+
+    pub fn snapshot(
+        &self,
+        name: &str,
+    ) -> Result<Option<Snapshot<'_>>, LookupError> {
+        Snapshot::new(self, name)
+    }
+
+    pub fn snapshots(&self) -> Result<Snapshots<'_>, IterError> {
+        let iter = ScfUninitializedIter::new(self.scf()).map_err(|err| {
+            IterError::CreateIter {
+                entity: IterEntity::Snapshot,
+                parent: self.error_path(),
+                err,
+            }
+        })?;
+        let iter =
+            unsafe { iter.init_instance_snapshots(self.handle.as_ptr()) }
+                .map_err(|err| IterError::InitIter {
+                    entity: IterEntity::Snapshot,
+                    parent: self.error_path(),
+                    err,
+                })?;
+        Ok(Snapshots::new(self, iter))
     }
 }
 

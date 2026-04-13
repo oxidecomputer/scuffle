@@ -16,6 +16,8 @@ struct Args {
     service: String,
     #[arg(long)]
     instance: Option<String>,
+    #[arg(long, requires = "instance")]
+    snapshot: Option<String>,
     property_group: Option<String>,
     #[arg(requires = "property_group")]
     property: Option<String>,
@@ -45,9 +47,7 @@ fn run(
 ) -> anyhow::Result<()> {
     if let Some(property_group) = property_group {
         let Some(pg) = target.property_group(&property_group)? else {
-            bail!(
-                "property group `{property_group}` not found in `{name}`",
-            );
+            bail!("property group `{property_group}` not found in `{name}`",);
         };
 
         if let Some(property) = property {
@@ -72,7 +72,8 @@ fn run(
 }
 
 fn main() -> anyhow::Result<()> {
-    let Args { service, instance, property_group, property } = Args::parse();
+    let Args { service, instance, snapshot, property_group, property } =
+        Args::parse();
 
     let scf = Scf::connect(Zone::Global)?;
     let scope = scf.scope_local()?;
@@ -88,8 +89,21 @@ fn main() -> anyhow::Result<()> {
                 service.name(),
             );
         };
-        let name = format!("{}:{}", service.name(), inst.name());
-        run(&inst, &name, property_group, property)?;
+        if let Some(snap_name) = &snapshot {
+            let Some(snap) = inst.snapshot(snap_name)? else {
+                bail!(
+                    "snapshot `{snap_name}` not found in instance {}:{}",
+                    service.name(),
+                    inst.name(),
+                );
+            };
+            let name =
+                format!("{}:{}@{}", service.name(), inst.name(), snap.name());
+            run(&snap, &name, property_group, property)?;
+        } else {
+            let name = format!("{}:{}", service.name(), inst.name());
+            run(&inst, &name, property_group, property)?;
+        }
     } else {
         run(&service, service.name(), property_group, property)?;
     }

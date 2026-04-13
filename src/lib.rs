@@ -12,6 +12,7 @@ mod property_group;
 mod scf;
 mod scope;
 mod service;
+mod snapshot;
 mod utf8cstring;
 mod value;
 
@@ -33,6 +34,8 @@ pub use scf::Scf;
 pub use scf::Zone;
 pub use scope::Scope;
 pub use service::Service;
+pub use snapshot::Snapshot;
+pub use snapshot::Snapshots;
 pub use value::Value;
 pub use value::ValueDisplaySmf;
 pub use value::ValueRef;

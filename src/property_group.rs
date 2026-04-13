@@ -7,6 +7,7 @@ use crate::Properties;
 use crate::Property;
 use crate::Scf;
 use crate::Service;
+use crate::Snapshot;
 use crate::error::ErrorPath;
 use crate::error::IterEntity;
 use crate::error::IterError;
@@ -143,10 +144,21 @@ impl<'a> PropertyGroup<'a, PropertyGroupEditable> {
     }
 }
 
+// Methods only available on snapshot property groups.
+impl<'a> PropertyGroup<'a, PropertyGroupSnapshot> {
+    pub(crate) fn from_snapshot(
+        snapshot: &'a Snapshot<'a>,
+        name: &str,
+    ) -> Result<Option<Self>, LookupError> {
+        Self::from_parent(PropertyGroupParent::Snapshot(snapshot), name)
+    }
+}
+
 #[derive(Clone, Copy)]
 enum PropertyGroupParent<'a> {
     Service(&'a Service<'a>),
     Instance(&'a Instance<'a>),
+    Snapshot(&'a Snapshot<'a>),
 }
 
 impl<'a> PropertyGroupParent<'a> {
@@ -154,6 +166,7 @@ impl<'a> PropertyGroupParent<'a> {
         match self {
             Self::Service(service) => service.scf(),
             Self::Instance(instance) => instance.scf(),
+            Self::Snapshot(snapshot) => snapshot.scf(),
         }
     }
 
@@ -167,6 +180,9 @@ impl<'a> PropertyGroupParent<'a> {
             Self::Instance(instance) => unsafe {
                 instance.scf_get_pg(name, pg)
             },
+            Self::Snapshot(snapshot) => unsafe {
+                snapshot.scf_get_pg(name, pg)
+            },
         }
     }
 }
@@ -176,6 +192,7 @@ impl ErrorPath for PropertyGroupParent<'_> {
         match self {
             Self::Service(service) => service.error_path(),
             Self::Instance(instance) => instance.error_path(),
+            Self::Snapshot(snapshot) => snapshot.error_path(),
         }
     }
 }
@@ -186,7 +203,7 @@ pub struct PropertyGroups<'a, St> {
     _state: PhantomData<fn() -> St>,
 }
 
-impl<'a, St> PropertyGroups<'a, St> {
+impl<'a> PropertyGroups<'a, PropertyGroupEditable> {
     pub(crate) fn from_service(
         service: &'a Service<'a>,
         iter: ScfIter<'a, libscf_sys::scf_propertygroup_t>,
@@ -204,6 +221,19 @@ impl<'a, St> PropertyGroups<'a, St> {
     ) -> Self {
         Self {
             parent: PropertyGroupParent::Instance(instance),
+            iter,
+            _state: PhantomData,
+        }
+    }
+}
+
+impl<'a> PropertyGroups<'a, PropertyGroupSnapshot> {
+    pub(crate) fn from_snapshot(
+        snapshot: &'a Snapshot<'a>,
+        iter: ScfIter<'a, libscf_sys::scf_propertygroup_t>,
+    ) -> Self {
+        Self {
+            parent: PropertyGroupParent::Snapshot(snapshot),
             iter,
             _state: PhantomData,
         }
