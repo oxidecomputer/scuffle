@@ -58,12 +58,12 @@ pub trait AddPropertyGroup:
 
         self.property_group(name)
             .map_err(|err| AddPropertyGroupError::ExistenceLookup {
-                parent: self.error_path().into_boxed_str(),
+                parent: self.error_path(),
                 name: Box::from(name),
                 err,
             })?
             .ok_or_else(|| AddPropertyGroupError::DeletedDuringEnsure {
-                parent: self.error_path().into_boxed_str(),
+                parent: self.error_path(),
                 name: Box::from(name),
             })
     }
@@ -86,7 +86,7 @@ impl<'a> AddPropertyGroupArgs<'a> {
     ) -> Result<Self, AddPropertyGroupError> {
         let name = Utf8CString::from_str(name).map_err(|err| {
             AddPropertyGroupError::InvalidName {
-                parent: parent.error_path().into_boxed_str(),
+                parent: parent.error_path(),
                 name: Box::from(name),
                 err,
             }
@@ -94,7 +94,7 @@ impl<'a> AddPropertyGroupArgs<'a> {
 
         let pg_type = Utf8CString::from_str(pg_type).map_err(|err| {
             AddPropertyGroupError::InvalidType {
-                parent: parent.error_path().into_boxed_str(),
+                parent: parent.error_path(),
                 pg_type: Box::from(pg_type),
                 err,
             }
@@ -102,7 +102,7 @@ impl<'a> AddPropertyGroupArgs<'a> {
 
         let handle = scf.scf_pg_create().map_err(|err| {
             AddPropertyGroupError::HandleCreate {
-                parent: parent.error_path().into_boxed_str(),
+                parent: parent.error_path(),
                 err,
             }
         })?;

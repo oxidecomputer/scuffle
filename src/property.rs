@@ -81,14 +81,14 @@ impl<'a, St> Property<'a, St> {
         let iter = ScfUninitializedIter::new(self.scf()).map_err(|err| {
             IterError::CreateIter {
                 entity: IterEntity::Value,
-                parent: self.error_path().into_boxed_str(),
+                parent: self.error_path(),
                 err,
             }
         })?;
         let iter = unsafe { iter.init_property_values(self.handle.as_ptr()) }
             .map_err(|err| IterError::InitIter {
             entity: IterEntity::Value,
-            parent: self.error_path().into_boxed_str(),
+            parent: self.error_path(),
             err,
         })?;
         Values::new(self, iter)
@@ -97,15 +97,14 @@ impl<'a, St> Property<'a, St> {
     pub fn single_value(&self) -> Result<Value, SingleValueError> {
         let mut iter = self.values()?;
 
-        let first_val =
-            iter.next().ok_or_else(|| SingleValueError::NoValues {
-                description: self.error_path().into_boxed_str(),
-            })??;
+        let first_val = iter.next().ok_or_else(|| {
+            SingleValueError::NoValues { description: self.error_path() }
+        })??;
 
         match iter.next() {
             None => Ok(first_val),
             Some(Ok(_)) => Err(SingleValueError::MultipleValues {
-                description: self.error_path().into_boxed_str(),
+                description: self.error_path(),
             }),
             Some(Err(err)) => Err(err.into()),
         }
@@ -113,11 +112,12 @@ impl<'a, St> Property<'a, St> {
 }
 
 impl<St> ErrorPath for Property<'_, St> {
-    fn error_path(&self) -> String {
+    fn error_path(&self) -> Box<str> {
         if let Some(snapshot) = self.property_group.snapshot() {
             format!("{} ({} snapshot)", self.fmri(), snapshot.name())
+                .into_boxed_str()
         } else {
-            self.fmri().to_string()
+            self.fmri().to_string().into_boxed_str()
         }
     }
 }

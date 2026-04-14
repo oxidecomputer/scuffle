@@ -129,14 +129,14 @@ impl<'a> Service<'a> {
         let iter = ScfUninitializedIter::new(self.scf()).map_err(|err| {
             IterError::CreateIter {
                 entity: IterEntity::Instance,
-                parent: self.error_path().into_boxed_str(),
+                parent: self.error_path(),
                 err,
             }
         })?;
         let iter = unsafe { iter.init_service_instances(self.handle.as_ptr()) }
             .map_err(|err| IterError::InitIter {
                 entity: IterEntity::Instance,
-                parent: self.error_path().into_boxed_str(),
+                parent: self.error_path(),
                 err,
             })?;
         Ok(Instances::new(self, iter))
@@ -169,7 +169,7 @@ impl AddPropertyGroup for Service<'_> {
             )
         })
         .map_err(|err| AddPropertyGroupError::Add {
-            parent: self.error_path().into_boxed_str(),
+            parent: self.error_path(),
             name: name.to_string().into_boxed_str(),
             err,
         })?;
@@ -194,7 +194,7 @@ impl HasPropertyGroups for Service<'_> {
         let iter = ScfUninitializedIter::new(self.scf()).map_err(|err| {
             IterError::CreateIter {
                 entity: IterEntity::PropertyGroup,
-                parent: self.error_path().into_boxed_str(),
+                parent: self.error_path(),
                 err,
             }
         })?;
@@ -202,7 +202,7 @@ impl HasPropertyGroups for Service<'_> {
             unsafe { iter.init_service_property_groups(self.handle.as_ptr()) }
                 .map_err(|err| IterError::InitIter {
                     entity: IterEntity::PropertyGroup,
-                    parent: self.error_path().into_boxed_str(),
+                    parent: self.error_path(),
                     err,
                 })?;
         Ok(PropertyGroups::from_service(self, iter))
@@ -210,7 +210,7 @@ impl HasPropertyGroups for Service<'_> {
 }
 
 impl ErrorPath for Service<'_> {
-    fn error_path(&self) -> String {
-        self.fmri().to_string()
+    fn error_path(&self) -> Box<str> {
+        self.fmri().to_string().into_boxed_str()
     }
 }

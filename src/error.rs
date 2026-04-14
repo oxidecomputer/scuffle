@@ -25,7 +25,7 @@ mod sealed {
         /// Most types implement this as something FMRI-like; e.g., a property
         /// within a property group within a service would return
         /// `{service_name}/:properties/{property_group_name}/{property_name}`.
-        fn error_path(&self) -> String;
+        fn error_path(&self) -> Box<str>;
     }
 }
 pub(crate) use sealed::ErrorPath;

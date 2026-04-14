@@ -125,9 +125,10 @@ impl HasPropertyGroups for Snapshot<'_> {
 }
 
 impl ErrorPath for Snapshot<'_> {
-    fn error_path(&self) -> String {
+    fn error_path(&self) -> Box<str> {
         // There is no syntax for including a snapshot in an FMRI.
         format!("{} ({} snapshot)", self.instance_fmri(), self.name())
+            .into_boxed_str()
     }
 }
 

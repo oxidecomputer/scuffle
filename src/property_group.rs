@@ -121,7 +121,7 @@ impl<'a, St> PropertyGroup<'a, St> {
         let iter = ScfUninitializedIter::new(self.scf()).map_err(|err| {
             IterError::CreateIter {
                 entity: IterEntity::Property,
-                parent: self.error_path().into_boxed_str(),
+                parent: self.error_path(),
                 err,
             }
         })?;
@@ -130,7 +130,7 @@ impl<'a, St> PropertyGroup<'a, St> {
         }
         .map_err(|err| IterError::InitIter {
             entity: IterEntity::Property,
-            parent: self.error_path().into_boxed_str(),
+            parent: self.error_path(),
             err,
         })?;
         Ok(Properties::new(self, iter))
@@ -138,11 +138,12 @@ impl<'a, St> PropertyGroup<'a, St> {
 }
 
 impl<St> ErrorPath for PropertyGroup<'_, St> {
-    fn error_path(&self) -> String {
+    fn error_path(&self) -> Box<str> {
         if let Some(snapshot) = self.snapshot() {
             format!("{} ({} snapshot)", self.fmri(), snapshot.name())
+                .into_boxed_str()
         } else {
-            self.fmri().to_string()
+            self.fmri().to_string().into_boxed_str()
         }
     }
 }
@@ -271,7 +272,7 @@ impl<'a> PropertyGroupParent<'a> {
 }
 
 impl ErrorPath for PropertyGroupParent<'_> {
-    fn error_path(&self) -> String {
+    fn error_path(&self) -> Box<str> {
         match self {
             Self::Service(service) => service.error_path(),
             Self::Instance(instance) => instance.error_path(),

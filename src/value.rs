@@ -649,7 +649,7 @@ impl<'a, St> Values<'a, St> {
         let value = ScfValue::new(parent.scf()).map_err(|err| {
             IterError::CreateItem {
                 entity: IterEntity::Value,
-                parent: parent.error_path().into_boxed_str(),
+                parent: parent.error_path(),
                 err,
             }
         })?;
@@ -673,7 +673,7 @@ impl<'a, St> Iterator for Values<'a, St> {
             Ok(()) => {
                 Some(self.value.get().map_err(|err| IterError::GetValue {
                     entity: IterEntity::Value,
-                    parent: self.parent.error_path().into_boxed_str(),
+                    parent: self.parent.error_path(),
                     err,
                 }))
             }

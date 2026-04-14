@@ -126,7 +126,7 @@ impl<'a> Instance<'a> {
         let iter = ScfUninitializedIter::new(self.scf()).map_err(|err| {
             IterError::CreateIter {
                 entity: IterEntity::PropertyGroup,
-                parent: self.error_path().into_boxed_str(),
+                parent: self.error_path(),
                 err,
             }
         })?;
@@ -138,7 +138,7 @@ impl<'a> Instance<'a> {
         }
         .map_err(|err| IterError::InitIter {
             entity: IterEntity::PropertyGroup,
-            parent: self.error_path().into_boxed_str(),
+            parent: self.error_path(),
             err,
         })
     }
@@ -169,7 +169,7 @@ impl<'a> Instance<'a> {
         let iter = ScfUninitializedIter::new(self.scf()).map_err(|err| {
             IterError::CreateIter {
                 entity: IterEntity::Snapshot,
-                parent: self.error_path().into_boxed_str(),
+                parent: self.error_path(),
                 err,
             }
         })?;
@@ -177,7 +177,7 @@ impl<'a> Instance<'a> {
             unsafe { iter.init_instance_snapshots(self.handle.as_ptr()) }
                 .map_err(|err| IterError::InitIter {
                     entity: IterEntity::Snapshot,
-                    parent: self.error_path().into_boxed_str(),
+                    parent: self.error_path(),
                     err,
                 })?;
         Ok(Snapshots::new(self, iter))
@@ -210,7 +210,7 @@ impl AddPropertyGroup for Instance<'_> {
             )
         })
         .map_err(|err| AddPropertyGroupError::Add {
-            parent: self.error_path().into_boxed_str(),
+            parent: self.error_path(),
             name: name.to_string().into_boxed_str(),
             err,
         })?;
@@ -235,7 +235,7 @@ impl HasPropertyGroups for Instance<'_> {
         let iter = ScfUninitializedIter::new(self.scf()).map_err(|err| {
             IterError::CreateIter {
                 entity: IterEntity::PropertyGroup,
-                parent: self.error_path().into_boxed_str(),
+                parent: self.error_path(),
                 err,
             }
         })?;
@@ -243,7 +243,7 @@ impl HasPropertyGroups for Instance<'_> {
             unsafe { iter.init_instance_property_groups(self.handle.as_ptr()) }
                 .map_err(|err| IterError::InitIter {
                     entity: IterEntity::PropertyGroup,
-                    parent: self.error_path().into_boxed_str(),
+                    parent: self.error_path(),
                     err,
                 })?;
         Ok(PropertyGroups::from_instance(self, iter))
@@ -251,8 +251,8 @@ impl HasPropertyGroups for Instance<'_> {
 }
 
 impl ErrorPath for Instance<'_> {
-    fn error_path(&self) -> String {
-        self.fmri().to_string()
+    fn error_path(&self) -> Box<str> {
+        self.fmri().to_string().into_boxed_str()
     }
 }
 

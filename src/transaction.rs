@@ -75,7 +75,7 @@ impl<'a, 'pg, St> Transaction<'a, 'pg, St> {
     }
 
     fn pg_error_path(&self) -> Box<str> {
-        self.inner.property_group.error_path().into_boxed_str()
+        self.inner.property_group.error_path()
     }
 }
 
@@ -87,9 +87,7 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionReset> {
         let handle =
             property_group.scf().scf_transaction_create().map_err(|err| {
                 TransactionError::HandleCreate {
-                    property_group: property_group
-                        .error_path()
-                        .into_boxed_str(),
+                    property_group: property_group.error_path(),
                     err,
                 }
             })?;

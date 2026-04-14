@@ -244,7 +244,7 @@ impl<'a, T: sealed::ScfIterable> ScfIter<'a, T> {
             1 => Some(Ok(())),
             _ => Some(Err(IterError::Iterating {
                 entity: T::ENTITY,
-                parent: parent.error_path().into_boxed_str(),
+                parent: parent.error_path(),
                 err: LibscfError::last(),
             })),
         }
@@ -266,7 +266,7 @@ impl<'a, T: sealed::ScfNamedIterable> ScfIter<'a, T> {
             Err(err) => {
                 return Some(Err(IterError::CreateItem {
                     entity: T::ENTITY,
-                    parent: parent.error_path().into_boxed_str(),
+                    parent: parent.error_path(),
                     err,
                 }));
             }
@@ -284,7 +284,7 @@ impl<'a, T: sealed::ScfNamedIterable> ScfIter<'a, T> {
             Err(err) => {
                 return Some(Err(IterError::GetName {
                     entity: T::ENTITY,
-                    parent: parent.error_path().into_boxed_str(),
+                    parent: parent.error_path(),
                     err,
                 }));
             }
