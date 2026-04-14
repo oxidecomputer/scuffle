@@ -20,6 +20,7 @@ use crate::error::IterError;
 use crate::error::LibscfError;
 use crate::error::LookupEntity;
 use crate::error::LookupError;
+use crate::error::format_lookup_target;
 use crate::iter::ScfIter;
 use crate::iter::ScfUninitializedIter;
 use crate::scf::ScfObject;
@@ -40,8 +41,7 @@ impl<'a> Instance<'a> {
         let name = Utf8CString::from_str(name).map_err(|err| {
             LookupError::InvalidName {
                 entity: LookupEntity::Instance,
-                parent: Some(service.error_path()),
-                name: name.to_string(),
+                target: format_lookup_target(name, Some(&service.error_path())),
                 err,
             }
         })?;
@@ -50,8 +50,10 @@ impl<'a> Instance<'a> {
             service.scf().scf_instance_create().map_err(|err| {
                 LookupError::HandleCreate {
                     entity: LookupEntity::Instance,
-                    parent: Some(service.error_path()),
-                    name: name.to_string(),
+                    target: format_lookup_target(
+                        name.as_str(),
+                        Some(&service.error_path()),
+                    ),
                     err,
                 }
             })?;
@@ -66,8 +68,10 @@ impl<'a> Instance<'a> {
             Err(LibscfError::NotFound) => Ok(None),
             Err(err) => Err(LookupError::Get {
                 entity: LookupEntity::Instance,
-                parent: Some(service.error_path()),
-                name: name.into_string(),
+                target: format_lookup_target(
+                    name.as_str(),
+                    Some(&service.error_path()),
+                ),
                 err,
             }),
         }
@@ -124,7 +128,7 @@ impl<'a> Instance<'a> {
         let iter = ScfUninitializedIter::new(self.scf()).map_err(|err| {
             IterError::CreateIter {
                 entity: IterEntity::PropertyGroup,
-                parent: self.error_path(),
+                parent: self.error_path().into_boxed_str(),
                 err,
             }
         })?;
@@ -136,7 +140,7 @@ impl<'a> Instance<'a> {
         }
         .map_err(|err| IterError::InitIter {
             entity: IterEntity::PropertyGroup,
-            parent: self.error_path(),
+            parent: self.error_path().into_boxed_str(),
             err,
         })
     }
@@ -156,7 +160,7 @@ impl<'a> Instance<'a> {
         let iter = ScfUninitializedIter::new(self.scf()).map_err(|err| {
             IterError::CreateIter {
                 entity: IterEntity::Snapshot,
-                parent: self.error_path(),
+                parent: self.error_path().into_boxed_str(),
                 err,
             }
         })?;
@@ -164,7 +168,7 @@ impl<'a> Instance<'a> {
             unsafe { iter.init_instance_snapshots(self.handle.as_ptr()) }
                 .map_err(|err| IterError::InitIter {
                     entity: IterEntity::Snapshot,
-                    parent: self.error_path(),
+                    parent: self.error_path().into_boxed_str(),
                     err,
                 })?;
         Ok(Snapshots::new(self, iter))
@@ -197,8 +201,8 @@ impl AddPropertyGroup for Instance<'_> {
             )
         })
         .map_err(|err| AddPropertyGroupError::Add {
-            parent: self.error_path(),
-            name: name.to_string(),
+            parent: self.error_path().into_boxed_str(),
+            name: name.to_string().into_boxed_str(),
             err,
         })?;
 
@@ -222,7 +226,7 @@ impl HasPropertyGroups for Instance<'_> {
         let iter = ScfUninitializedIter::new(self.scf()).map_err(|err| {
             IterError::CreateIter {
                 entity: IterEntity::PropertyGroup,
-                parent: self.error_path(),
+                parent: self.error_path().into_boxed_str(),
                 err,
             }
         })?;
@@ -230,7 +234,7 @@ impl HasPropertyGroups for Instance<'_> {
             unsafe { iter.init_instance_property_groups(self.handle.as_ptr()) }
                 .map_err(|err| IterError::InitIter {
                     entity: IterEntity::PropertyGroup,
-                    parent: self.error_path(),
+                    parent: self.error_path().into_boxed_str(),
                     err,
                 })?;
         Ok(PropertyGroups::from_instance(self, iter))

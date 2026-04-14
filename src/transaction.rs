@@ -2,11 +2,6 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-// `TransactionError` is slightly larger than clippy's threshold for large
-// errors, but boxing variants makes matching very painful. Live with large
-// errors.
-#![allow(clippy::result_large_err)]
-
 use crate::PropertyGroup;
 use crate::PropertyGroupEditable;
 use crate::Scf;
@@ -79,8 +74,8 @@ impl<'a, 'pg, St> Transaction<'a, 'pg, St> {
         self.inner.property_group.scf()
     }
 
-    fn pg_error_path(&self) -> String {
-        self.inner.property_group.error_path()
+    fn pg_error_path(&self) -> Box<str> {
+        self.inner.property_group.error_path().into_boxed_str()
     }
 }
 
@@ -92,7 +87,7 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionReset> {
         let handle =
             property_group.scf().scf_transaction_create().map_err(|err| {
                 TransactionError::HandleCreate {
-                    property_group: property_group.error_path(),
+                    property_group: property_group.error_path().into_boxed_str(),
                     err,
                 }
             })?;
@@ -151,7 +146,7 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
             if val.kind() != expected_kind {
                 return Err(TransactionError::TypeMismatch {
                     property_group: self.pg_error_path(),
-                    name: name.to_string(),
+                    name: name.to_string().into_boxed_str(),
                     property_type: expected_kind,
                     value_type: val.kind(),
                 });
@@ -160,13 +155,13 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
             let mut scf_val = ScfValue::new(self.scf()).map_err(|err| {
                 TransactionError::CreateValue {
                     property_group: self.pg_error_path(),
-                    name: name.to_string(),
+                    name: name.to_string().into_boxed_str(),
                     err,
                 }
             })?;
             scf_val.set(val).map_err(|err| TransactionError::SetValue {
                 property_group: self.pg_error_path(),
-                name: name.to_string(),
+                name: name.to_string().into_boxed_str(),
                 err,
             })?;
 
@@ -294,7 +289,7 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
             .property(name)
             .map_err(|err| TransactionError::ExistenceLookup {
                 property_group: self.pg_error_path(),
-                name: name.to_string(),
+                name: name.to_string().into_boxed_str(),
                 err,
             })?
             .is_some();
@@ -371,7 +366,7 @@ impl<'a> TransactionEntry<'a> {
             unsafe { val.scf_add_to_transaction_entry(handle.as_mut_ptr()) }
                 .map_err(|err| TransactionError::AddValue {
                     property_group: tx.pg_error_path(),
-                    name: name.to_string(),
+                    name: name.to_string().into_boxed_str(),
                     err,
                 })?;
         }
@@ -395,7 +390,7 @@ impl<'a> TransactionEntry<'a> {
             })
             .map_err(|err| TransactionError::Delete {
                 property_group: tx.pg_error_path(),
-                name: name.to_string(),
+                name: name.to_string().into_boxed_str(),
                 err,
             })
         })
@@ -418,7 +413,7 @@ impl<'a> TransactionEntry<'a> {
             })
             .map_err(|err| TransactionError::New {
                 property_group: tx.pg_error_path(),
-                name: name.to_string(),
+                name: name.to_string().into_boxed_str(),
                 err,
             })
         })
@@ -441,7 +436,7 @@ impl<'a> TransactionEntry<'a> {
             })
             .map_err(|err| TransactionError::Change {
                 property_group: tx.pg_error_path(),
-                name: name.to_string(),
+                name: name.to_string().into_boxed_str(),
                 err,
             })
         })
@@ -464,7 +459,7 @@ impl<'a> TransactionEntry<'a> {
             })
             .map_err(|err| TransactionError::ChangeType {
                 property_group: tx.pg_error_path(),
-                name: name.to_string(),
+                name: name.to_string().into_boxed_str(),
                 err,
             })
         })

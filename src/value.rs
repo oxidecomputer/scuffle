@@ -462,7 +462,7 @@ impl ScfValue<'_> {
                 } else if let Ok(ipnet) = s.parse() {
                     Ok(Value::NetV4(ipnet))
                 } else {
-                    Err(GetValueError::InvalidNetAddrV4(s))
+                    Err(GetValueError::InvalidNetAddrV4(s.into_boxed_str()))
                 }
             }
             scf_type_t::SCF_TYPE_NET_ADDR_V6 => {
@@ -472,7 +472,7 @@ impl ScfValue<'_> {
                 } else if let Ok(ipnet) = s.parse() {
                     Ok(Value::NetV6(ipnet))
                 } else {
-                    Err(GetValueError::InvalidNetAddrV6(s))
+                    Err(GetValueError::InvalidNetAddrV6(s.into_boxed_str()))
                 }
             }
             scf_type_t::SCF_TYPE_NET_ADDR => {
@@ -482,7 +482,7 @@ impl ScfValue<'_> {
                 } else if let Ok(ipnet) = s.parse() {
                     Ok(Value::Net(ipnet))
                 } else {
-                    Err(GetValueError::InvalidNetAddr(s))
+                    Err(GetValueError::InvalidNetAddr(s.into_boxed_str()))
                 }
             }
         }
@@ -504,7 +504,7 @@ impl ScfValue<'_> {
             s: &str,
         ) -> Result<Result<(), LibscfError>, SetValueError> {
             let s = CString::new(s).map_err(|err| {
-                SetValueError::InvalidString { value: s.to_owned(), err }
+                SetValueError::InvalidString { value: Box::from(s), err }
             })?;
             let ret = unsafe {
                 libscf_sys::scf_value_set_from_string(ptr, ty, s.as_ptr())
@@ -649,7 +649,7 @@ impl<'a, St> Values<'a, St> {
         let value = ScfValue::new(parent.scf()).map_err(|err| {
             IterError::CreateItem {
                 entity: IterEntity::Value,
-                parent: parent.error_path(),
+                parent: parent.error_path().into_boxed_str(),
                 err,
             }
         })?;
@@ -673,7 +673,7 @@ impl<'a, St> Iterator for Values<'a, St> {
             Ok(()) => {
                 Some(self.value.get().map_err(|err| IterError::GetValue {
                     entity: IterEntity::Value,
-                    parent: self.parent.error_path(),
+                    parent: self.parent.error_path().into_boxed_str(),
                     err,
                 }))
             }

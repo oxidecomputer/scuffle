@@ -108,12 +108,12 @@ impl<'a> Scf<'a> {
             ConnectMode::Zone(zonename) => {
                 let mut value = ScfValue::new(&scf).map_err(|err| {
                     ScfError::CreateZoneName {
-                        zonename: zonename.to_owned(),
+                        zonename: Box::from(zonename),
                         err,
                     }
                 })?;
                 value.set(ValueRef::AString(zonename)).map_err(|err| {
-                    ScfError::SetZoneName { zonename: zonename.to_owned(), err }
+                    ScfError::SetZoneName { zonename: Box::from(zonename), err }
                 })?;
                 unsafe {
                     value.scf_apply_as_decoration(
@@ -123,7 +123,7 @@ impl<'a> Scf<'a> {
                 }
                 .map_err(|err| {
                     ScfError::SetDecorationZoneName {
-                        zonename: zonename.to_owned(),
+                        zonename: Box::from(zonename),
                         err,
                     }
                 })?;
@@ -133,13 +133,13 @@ impl<'a> Scf<'a> {
             ConnectMode::DoorPath(door_path) => {
                 let mut value = ScfValue::new(&scf).map_err(|err| {
                     ScfError::CreateDoorPath {
-                        door_path: door_path.to_owned(),
+                        door_path: Box::from(door_path),
                         err,
                     }
                 })?;
                 value.set(ValueRef::AString(door_path)).map_err(|err| {
                     ScfError::SetDoorPath {
-                        door_path: door_path.to_owned(),
+                        door_path: Box::from(door_path),
                         err,
                     }
                 })?;
@@ -151,7 +151,7 @@ impl<'a> Scf<'a> {
                 }
                 .map_err(|err| {
                     ScfError::SetDecorationDoorPath {
-                        door_path: door_path.to_owned(),
+                        door_path: Box::from(door_path),
                         err,
                     }
                 })?;
@@ -171,7 +171,7 @@ impl<'a> Scf<'a> {
 
     pub fn refresh(&self, fmri: &str) -> Result<(), RefreshError> {
         let fmri = CString::new(fmri).map_err(|err| {
-            RefreshError::InvalidFmri { fmri: fmri.to_owned(), err }
+            RefreshError::InvalidFmri { fmri: Box::from(fmri), err }
         })?;
         self.refresh_cstr(&fmri)
     }
@@ -237,7 +237,7 @@ impl RefreshMechanism<'_> {
                 let ret =
                     unsafe { libscf_sys::smf_refresh_instance(fmri.as_ptr()) };
                 LibscfError::from_ret(ret).map_err(|err| RefreshError::Failed {
-                    fmri: String::from_utf8_lossy(fmri.to_bytes()).into_owned(),
+                    fmri: String::from_utf8_lossy(fmri.to_bytes()).into_owned().into_boxed_str(),
                     err,
                 })
             }

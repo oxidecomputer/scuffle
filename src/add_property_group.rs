@@ -22,7 +22,6 @@ pub enum AddPropertyGroupFlags {
 pub trait AddPropertyGroup:
     HasPropertyGroups<St = PropertyGroupEditable> + ErrorPath
 {
-    #[allow(clippy::result_large_err)]
     fn add_property_group(
         &mut self,
         name: &str,
@@ -30,7 +29,6 @@ pub trait AddPropertyGroup:
         flags: AddPropertyGroupFlags,
     ) -> Result<PropertyGroup<'_, PropertyGroupEditable>, AddPropertyGroupError>;
 
-    #[allow(clippy::result_large_err)]
     fn ensure_property_group(
         &mut self,
         name: &str,
@@ -60,13 +58,13 @@ pub trait AddPropertyGroup:
 
         self.property_group(name)
             .map_err(|err| AddPropertyGroupError::ExistenceLookup {
-                parent: self.error_path(),
-                name: name.to_string(),
+                parent: self.error_path().into_boxed_str(),
+                name: Box::from(name),
                 err,
             })?
             .ok_or_else(|| AddPropertyGroupError::DeletedDuringEnsure {
-                parent: self.error_path(),
-                name: name.to_string(),
+                parent: self.error_path().into_boxed_str(),
+                name: Box::from(name),
             })
     }
 }
@@ -88,23 +86,23 @@ impl<'a> AddPropertyGroupArgs<'a> {
     ) -> Result<Self, AddPropertyGroupError> {
         let name = Utf8CString::from_str(name).map_err(|err| {
             AddPropertyGroupError::InvalidName {
-                parent: parent.error_path(),
-                name: name.to_string(),
+                parent: parent.error_path().into_boxed_str(),
+                name: Box::from(name),
                 err,
             }
         })?;
 
         let pg_type = Utf8CString::from_str(pg_type).map_err(|err| {
             AddPropertyGroupError::InvalidType {
-                parent: parent.error_path(),
-                pg_type: pg_type.to_string(),
+                parent: parent.error_path().into_boxed_str(),
+                pg_type: Box::from(pg_type),
                 err,
             }
         })?;
 
         let handle = scf.scf_pg_create().map_err(|err| {
             AddPropertyGroupError::HandleCreate {
-                parent: parent.error_path(),
+                parent: parent.error_path().into_boxed_str(),
                 err,
             }
         })?;

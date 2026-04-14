@@ -17,6 +17,7 @@ use crate::error::LibscfError;
 use crate::error::LookupEntity;
 use crate::error::LookupError;
 use crate::error::TransactionError;
+use crate::error::format_lookup_target;
 use crate::iter::ScfIter;
 use crate::iter::ScfUninitializedIter;
 use crate::scf::ScfObject;
@@ -45,8 +46,10 @@ impl<'a, St> PropertyGroup<'a, St> {
         let name = Utf8CString::from_str(name).map_err(|err| {
             LookupError::InvalidName {
                 entity: LookupEntity::PropertyGroup,
-                parent: Some(parent.error_path()),
-                name: name.to_string(),
+                target: format_lookup_target(
+                    name,
+                    Some(&parent.error_path()),
+                ),
                 err,
             }
         })?;
@@ -54,8 +57,10 @@ impl<'a, St> PropertyGroup<'a, St> {
         let mut handle = parent.scf().scf_pg_create().map_err(|err| {
             LookupError::HandleCreate {
                 entity: LookupEntity::PropertyGroup,
-                parent: Some(parent.error_path()),
-                name: name.to_string(),
+                target: format_lookup_target(
+                    name.as_str(),
+                    Some(&parent.error_path()),
+                ),
                 err,
             }
         })?;
@@ -71,8 +76,10 @@ impl<'a, St> PropertyGroup<'a, St> {
             Err(LibscfError::NotFound) => Ok(None),
             Err(err) => Err(LookupError::Get {
                 entity: LookupEntity::PropertyGroup,
-                parent: Some(parent.error_path()),
-                name: name.into_string(),
+                target: format_lookup_target(
+                    name.as_str(),
+                    Some(&parent.error_path()),
+                ),
                 err,
             }),
         }
@@ -111,7 +118,7 @@ impl<'a, St> PropertyGroup<'a, St> {
         let iter = ScfUninitializedIter::new(self.scf()).map_err(|err| {
             IterError::CreateIter {
                 entity: IterEntity::Property,
-                parent: self.error_path(),
+                parent: self.error_path().into_boxed_str(),
                 err,
             }
         })?;
@@ -120,7 +127,7 @@ impl<'a, St> PropertyGroup<'a, St> {
         }
         .map_err(|err| IterError::InitIter {
             entity: IterEntity::Property,
-            parent: self.error_path(),
+            parent: self.error_path().into_boxed_str(),
             err,
         })?;
         Ok(Properties::new(self, iter))
@@ -184,10 +191,6 @@ impl<'a> PropertyGroup<'a, PropertyGroupEditable> {
         })
     }
 
-    // `TransactionError` is slightly larger than clippy's threshold for large
-    // errors, but boxing variants makes matching very painful. Live with large
-    // errors.
-    #[allow(clippy::result_large_err)]
     pub fn transaction(
         &mut self,
     ) -> Result<Transaction<'_, 'a, TransactionReset>, TransactionError> {

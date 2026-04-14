@@ -13,6 +13,7 @@ use crate::error::IterError;
 use crate::error::LibscfError;
 use crate::error::LookupEntity;
 use crate::error::LookupError;
+use crate::error::format_lookup_target;
 use crate::iter::ScfIter;
 use crate::scf::ScfObject;
 use crate::utf8cstring::Utf8CString;
@@ -32,8 +33,10 @@ impl<'a> Snapshot<'a> {
         let name = Utf8CString::from_str(name).map_err(|err| {
             LookupError::InvalidName {
                 entity: LookupEntity::Snapshot,
-                parent: Some(instance.error_path()),
-                name: name.to_string(),
+                target: format_lookup_target(
+                    name,
+                    Some(&instance.error_path()),
+                ),
                 err,
             }
         })?;
@@ -42,8 +45,10 @@ impl<'a> Snapshot<'a> {
             instance.scf().scf_snapshot_create().map_err(|err| {
                 LookupError::HandleCreate {
                     entity: LookupEntity::Snapshot,
-                    parent: Some(instance.error_path()),
-                    name: name.to_string(),
+                    target: format_lookup_target(
+                        name.as_str(),
+                        Some(&instance.error_path()),
+                    ),
                     err,
                 }
             })?;
@@ -58,8 +63,10 @@ impl<'a> Snapshot<'a> {
             Err(LibscfError::NotFound) => Ok(None),
             Err(err) => Err(LookupError::Get {
                 entity: LookupEntity::Snapshot,
-                parent: Some(instance.error_path()),
-                name: name.into_string(),
+                target: format_lookup_target(
+                    name.as_str(),
+                    Some(&instance.error_path()),
+                ),
                 err,
             }),
         }

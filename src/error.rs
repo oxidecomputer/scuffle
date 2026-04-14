@@ -51,39 +51,40 @@ impl fmt::Display for LookupEntity {
 
 #[derive(Debug, thiserror::Error)]
 pub enum LookupError {
-    #[error("invalid {entity} name {name:?}{}", format_parent(.parent))]
+    #[error("invalid {entity} name {target}")]
     InvalidName {
         entity: LookupEntity,
-        parent: Option<String>,
-        name: String,
+        target: Box<str>,
         #[source]
         err: NulError,
     },
 
-    #[error("error creating handle for {entity} `{name}`{}", format_parent(.parent))]
+    #[error("error creating handle for {entity} {target}")]
     HandleCreate {
         entity: LookupEntity,
-        parent: Option<String>,
-        name: String,
+        target: Box<str>,
         #[source]
         err: LibscfError,
     },
 
-    #[error("error getting {entity} `{name}`{}", format_parent(.parent))]
+    #[error("error getting {entity} {target}")]
     Get {
         entity: LookupEntity,
-        parent: Option<String>,
-        name: String,
+        target: Box<str>,
         #[source]
         err: LibscfError,
     },
 }
 
-fn format_parent(parent: &Option<String>) -> String {
+pub(crate) fn format_lookup_target(
+    name: &str,
+    parent: Option<&str>,
+) -> Box<str> {
     match parent {
-        Some(p) => format!(" within `{p}`"),
-        None => String::new(),
+        Some(p) => format!("`{name}` within `{p}`"),
+        None => format!("`{name}`"),
     }
+    .into_boxed_str()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -112,7 +113,7 @@ pub enum IterError {
     #[error("error creating {entity} iterator over `{parent}`")]
     CreateIter {
         entity: IterEntity,
-        parent: String,
+        parent: Box<str>,
         #[source]
         err: LibscfError,
     },
@@ -120,7 +121,7 @@ pub enum IterError {
     #[error("error initializing {entity} iterator over `{parent}`")]
     InitIter {
         entity: IterEntity,
-        parent: String,
+        parent: Box<str>,
         #[source]
         err: LibscfError,
     },
@@ -128,7 +129,7 @@ pub enum IterError {
     #[error("error creating {entity} while iterating over `{parent}`")]
     CreateItem {
         entity: IterEntity,
-        parent: String,
+        parent: Box<str>,
         #[source]
         err: LibscfError,
     },
@@ -136,7 +137,7 @@ pub enum IterError {
     #[error("error iterating {entity} of `{parent}`")]
     Iterating {
         entity: IterEntity,
-        parent: String,
+        parent: Box<str>,
         #[source]
         err: LibscfError,
     },
@@ -144,7 +145,7 @@ pub enum IterError {
     #[error("error getting name of {entity} while iterating over `{parent}`")]
     GetName {
         entity: IterEntity,
-        parent: String,
+        parent: Box<str>,
         #[source]
         err: ScfStringError,
     },
@@ -152,7 +153,7 @@ pub enum IterError {
     #[error("error converting {entity} value while iterating `{parent}`")]
     GetValue {
         entity: IterEntity,
-        parent: String,
+        parent: Box<str>,
         #[source]
         err: GetValueError,
     },
@@ -310,21 +311,21 @@ pub enum ScfError {
         "error creating zone name value for zone {zonename} during connect"
     )]
     CreateZoneName {
-        zonename: String,
+        zonename: Box<str>,
         #[source]
         err: LibscfError,
     },
 
     #[error("error setting zone name to {zonename} during connect")]
     SetZoneName {
-        zonename: String,
+        zonename: Box<str>,
         #[source]
         err: SetValueError,
     },
 
     #[error("error setting decoration to attach to zone {zonename}")]
     SetDecorationZoneName {
-        zonename: String,
+        zonename: Box<str>,
         #[source]
         err: LibscfError,
     },
@@ -332,7 +333,7 @@ pub enum ScfError {
     #[cfg(any(test, feature = "testing"))]
     #[error("error creating door path value to {door_path} during connect")]
     CreateDoorPath {
-        door_path: String,
+        door_path: Box<str>,
         #[source]
         err: LibscfError,
     },
@@ -340,7 +341,7 @@ pub enum ScfError {
     #[cfg(any(test, feature = "testing"))]
     #[error("error setting door path to {door_path} during connect")]
     SetDoorPath {
-        door_path: String,
+        door_path: Box<str>,
         #[source]
         err: SetValueError,
     },
@@ -348,7 +349,7 @@ pub enum ScfError {
     #[cfg(any(test, feature = "testing"))]
     #[error("error setting decoration to connect to door {door_path}")]
     SetDecorationDoorPath {
-        door_path: String,
+        door_path: Box<str>,
         #[source]
         err: LibscfError,
     },
@@ -358,14 +359,14 @@ pub enum ScfError {
 pub enum RefreshError {
     #[error("invalid fmri {fmri:?}")]
     InvalidFmri {
-        fmri: String,
+        fmri: Box<str>,
         #[source]
         err: NulError,
     },
 
     #[error("failed to refresh fmri `{fmri}`")]
     Failed {
-        fmri: String,
+        fmri: Box<str>,
         #[source]
         err: LibscfError,
     },
@@ -389,7 +390,7 @@ pub enum SetValueError {
 
     #[error("invalid string value {value:?}")]
     InvalidString {
-        value: String,
+        value: Box<str>,
         #[source]
         err: NulError,
     },
@@ -433,22 +434,22 @@ pub enum GetValueError {
     GetAsString(#[from] ScfStringError),
 
     #[error("invalid net address v4 value: {0}")]
-    InvalidNetAddrV4(String),
+    InvalidNetAddrV4(Box<str>),
 
     #[error("invalid net address v6 value: {0}")]
-    InvalidNetAddrV6(String),
+    InvalidNetAddrV6(Box<str>),
 
     #[error("invalid net address value: {0}")]
-    InvalidNetAddr(String),
+    InvalidNetAddr(Box<str>),
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum SingleValueError {
     #[error("property `{description}` has no values")]
-    NoValues { description: String },
+    NoValues { description: Box<str> },
 
     #[error("property `{description}` has more than one value")]
-    MultipleValues { description: String },
+    MultipleValues { description: Box<str> },
 
     #[error("error getting single value")]
     IterError(#[from] IterError),
@@ -458,31 +459,31 @@ pub enum SingleValueError {
 pub enum AddPropertyGroupError {
     #[error("invalid property group name {name:?} in `{parent}`")]
     InvalidName {
-        parent: String,
-        name: String,
+        parent: Box<str>,
+        name: Box<str>,
         #[source]
         err: NulError,
     },
 
     #[error("invalid property group type {pg_type:?} in `{parent}`")]
     InvalidType {
-        parent: String,
-        pg_type: String,
+        parent: Box<str>,
+        pg_type: Box<str>,
         #[source]
         err: NulError,
     },
 
     #[error("failed to create property group handle for `{parent}`")]
     HandleCreate {
-        parent: String,
+        parent: Box<str>,
         #[source]
         err: LibscfError,
     },
 
     #[error("failed to add property group `{name}` to `{parent}`")]
     Add {
-        parent: String,
-        name: String,
+        parent: Box<str>,
+        name: Box<str>,
         #[source]
         err: LibscfError,
     },
@@ -492,8 +493,8 @@ pub enum AddPropertyGroupError {
          `{parent}`"
     )]
     ExistenceLookup {
-        parent: String,
-        name: String,
+        parent: Box<str>,
+        name: Box<str>,
         #[source]
         err: LookupError,
     },
@@ -502,35 +503,35 @@ pub enum AddPropertyGroupError {
         "property group `{name}` on `{parent}` was deleted concurrently \
          with ensure attempt"
     )]
-    DeletedDuringEnsure { parent: String, name: String },
+    DeletedDuringEnsure { parent: Box<str>, name: Box<str> },
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum TransactionError {
     #[error("failed to create transaction on `{property_group}`")]
     HandleCreate {
-        property_group: String,
+        property_group: Box<str>,
         #[source]
         err: LibscfError,
     },
 
     #[error("failed to start transaction on `{property_group}`")]
     Start {
-        property_group: String,
+        property_group: Box<str>,
         #[source]
         err: LibscfError,
     },
 
     #[error("invalid property name in transaction on `{property_group}`")]
     InvalidName {
-        property_group: String,
+        property_group: Box<str>,
         #[source]
         err: NulError,
     },
 
     #[error("error creating entry in transaction on `{property_group}`")]
     CreateEntry {
-        property_group: String,
+        property_group: Box<str>,
         #[source]
         err: LibscfError,
     },
@@ -540,8 +541,8 @@ pub enum TransactionError {
          `{property_group}`"
     )]
     ExistenceLookup {
-        property_group: String,
-        name: String,
+        property_group: Box<str>,
+        name: Box<str>,
         #[source]
         err: LookupError,
     },
@@ -550,8 +551,8 @@ pub enum TransactionError {
         "error deleting property `{name}` in transaction on `{property_group}`"
     )]
     Delete {
-        property_group: String,
-        name: String,
+        property_group: Box<str>,
+        name: Box<str>,
         #[source]
         err: LibscfError,
     },
@@ -561,8 +562,8 @@ pub enum TransactionError {
          `{property_group}`"
     )]
     New {
-        property_group: String,
-        name: String,
+        property_group: Box<str>,
+        name: Box<str>,
         #[source]
         err: LibscfError,
     },
@@ -572,8 +573,8 @@ pub enum TransactionError {
          `{property_group}`"
     )]
     Change {
-        property_group: String,
-        name: String,
+        property_group: Box<str>,
+        name: Box<str>,
         #[source]
         err: LibscfError,
     },
@@ -583,8 +584,8 @@ pub enum TransactionError {
          `{property_group}`"
     )]
     ChangeType {
-        property_group: String,
-        name: String,
+        property_group: Box<str>,
+        name: Box<str>,
         #[source]
         err: LibscfError,
     },
@@ -595,8 +596,8 @@ pub enum TransactionError {
          has type {value_type}"
     )]
     TypeMismatch {
-        property_group: String,
-        name: String,
+        property_group: Box<str>,
+        name: Box<str>,
         property_type: ValueKind,
         value_type: ValueKind,
     },
@@ -606,8 +607,8 @@ pub enum TransactionError {
          `{property_group}`"
     )]
     CreateValue {
-        property_group: String,
-        name: String,
+        property_group: Box<str>,
+        name: Box<str>,
         #[source]
         err: LibscfError,
     },
@@ -617,8 +618,8 @@ pub enum TransactionError {
          `{property_group}`"
     )]
     SetValue {
-        property_group: String,
-        name: String,
+        property_group: Box<str>,
+        name: Box<str>,
         #[source]
         err: SetValueError,
     },
@@ -628,15 +629,15 @@ pub enum TransactionError {
          `{property_group}`"
     )]
     AddValue {
-        property_group: String,
-        name: String,
+        property_group: Box<str>,
+        name: Box<str>,
         #[source]
         err: LibscfError,
     },
 
     #[error("failed to commit transaction on `{property_group}`")]
     Commit {
-        property_group: String,
+        property_group: Box<str>,
         #[source]
         err: LibscfError,
     },
