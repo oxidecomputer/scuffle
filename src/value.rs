@@ -36,6 +36,14 @@ use proptest::strategy::Strategy as _;
 #[cfg(any(test, feature = "testing"))]
 use test_strategy::Arbitrary;
 
+/// Owned representation of a `libscf` value.
+///
+/// Most variants of `Value` map directly to a `libscf` type of a similar name;
+/// e.g., `Value::Bool(_)` maps to [`scf_type_t::SCF_TYPE_BOOLEAN`]. For IP
+/// addresses, `libscf` treats prefixes as optional. This type has separate `Ip`
+/// and `IpNet` values of each address family; both the `Ip` and `IpNet` for
+/// each family map down to a single `libscf` type (e.g., `Value::NetAddrV4(_)`
+/// and `Value::NetV4(_)` both map to [`scf_type_t::SCF_TYPE_NET_ADDR_V4`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(any(test, feature = "testing"), derive(Arbitrary))]
 pub enum Value {
@@ -100,6 +108,7 @@ pub enum Value {
 }
 
 impl Value {
+    /// The [`ValueKind`] of this value.
     pub fn kind(&self) -> ValueKind {
         match self {
             Self::Bool(_) => ValueKind::Bool,
@@ -119,6 +128,7 @@ impl Value {
         }
     }
 
+    /// Convert this value to a borrowed [`ValueRef`].
     pub fn as_value_ref(&self) -> ValueRef<'_> {
         match self {
             Self::Bool(b) => ValueRef::Bool(*b),
@@ -149,6 +159,14 @@ impl Value {
     }
 }
 
+/// Enum with a one-to-one mapping to [`scf_type_t`].
+///
+/// As noted on [`Value`], some of the net-address-related [`Value`] variants
+/// collapse down to a single `scf_type_t`, which means they also collapse down
+/// to a single `ValueKind`.
+///
+/// Does not map the special "invalid" type used by `libscf` as an in-band
+/// error code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ValueKind {
     Bool,
@@ -212,6 +230,7 @@ impl ValueKind {
     }
 }
 
+/// Analogue of [`Value`] that contains borrowed data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ValueRef<'a> {
     Bool(bool),
@@ -234,6 +253,7 @@ pub enum ValueRef<'a> {
 }
 
 impl<'a> ValueRef<'a> {
+    /// The [`ValueKind`] of this value.
     pub fn kind(&self) -> ValueKind {
         match self {
             Self::Bool(_) => ValueKind::Bool,
@@ -253,6 +273,7 @@ impl<'a> ValueRef<'a> {
         }
     }
 
+    /// Convert this value to an owned [`Value`].
     pub fn to_value(&self) -> Value {
         match self {
             Self::Bool(b) => Value::Bool(*b),
@@ -283,6 +304,9 @@ impl<'a> ValueRef<'a> {
     }
 }
 
+/// Display adapter for [`Value`] and [`ValueRef`].
+///
+/// Obtained via [`Value::display_smf()`] or [`ValueRef::display_smf()`].
 pub struct ValueDisplaySmf<'a>(ValueRef<'a>);
 
 impl fmt::Display for ValueDisplaySmf<'_> {
@@ -637,6 +661,7 @@ mod arb_support {
     }
 }
 
+/// Iterator over all values in a [`Property`].
 pub struct Values<'a, St> {
     parent: &'a Property<'a, St>,
     value: ScfValue<'a>,
