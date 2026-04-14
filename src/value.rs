@@ -10,6 +10,7 @@ use crate::error::ErrorPath;
 use crate::error::GetValueError;
 use crate::error::HandleCreateError;
 use crate::error::IterError;
+use crate::error::IterErrorKind;
 use crate::error::LibscfError;
 use crate::error::ScfEntity;
 use crate::error::SetValueError;
@@ -665,13 +666,11 @@ impl<'a, St> Iterator for Values<'a, St> {
         };
 
         match self.iter.next_with_handle(self.parent, &mut self.value.handle)? {
-            Ok(()) => {
-                Some(self.value.get().map_err(|err| IterError::GetValue {
-                    entity: ScfEntity::Value,
-                    parent: self.parent.error_path(),
-                    err,
-                }))
-            }
+            Ok(()) => Some(self.value.get().map_err(|err| IterError::Iter {
+                entity: ScfEntity::Value,
+                parent: self.parent.error_path(),
+                kind: IterErrorKind::GetValue(err),
+            })),
             Err(err) => Some(Err(err)),
         }
     }

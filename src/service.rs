@@ -16,6 +16,7 @@ use crate::add_property_group::AddPropertyGroupArgs;
 use crate::error::AddPropertyGroupError;
 use crate::error::ErrorPath;
 use crate::error::IterError;
+use crate::error::IterErrorKind;
 use crate::error::LibscfError;
 use crate::error::LookupError;
 use crate::error::ScfEntity;
@@ -128,10 +129,10 @@ impl<'a> Service<'a> {
     pub fn instances(&self) -> Result<Instances<'_>, IterError> {
         let iter = ScfUninitializedIter::new(self.scf())?;
         let iter = unsafe { iter.init_service_instances(self.handle.as_ptr()) }
-            .map_err(|err| IterError::InitIter {
+            .map_err(|err| IterError::Iter {
                 entity: ScfEntity::Instance,
                 parent: self.error_path(),
-                err,
+                kind: IterErrorKind::Init(err),
             })?;
         Ok(Instances::new(self, iter))
     }
@@ -188,10 +189,10 @@ impl HasPropertyGroups for Service<'_> {
         let iter = ScfUninitializedIter::new(self.scf())?;
         let iter =
             unsafe { iter.init_service_property_groups(self.handle.as_ptr()) }
-                .map_err(|err| IterError::InitIter {
+                .map_err(|err| IterError::Iter {
                     entity: ScfEntity::PropertyGroup,
                     parent: self.error_path(),
-                    err,
+                    kind: IterErrorKind::Init(err),
                 })?;
         Ok(PropertyGroups::from_service(self, iter))
     }

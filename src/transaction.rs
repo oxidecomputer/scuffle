@@ -10,6 +10,8 @@ use crate::ValueRef;
 use crate::error::ErrorPath;
 use crate::error::LibscfError;
 use crate::error::TransactionError;
+use crate::error::TransactionOp;
+use crate::error::TransactionPropertyError;
 use crate::scf::ScfObject;
 use crate::utf8cstring::Utf8CString;
 use crate::value::ScfValue;
@@ -347,9 +349,10 @@ impl<'a> TransactionEntry<'a> {
 
         for val in &mut values {
             unsafe { val.scf_add_to_transaction_entry(handle.as_mut_ptr()) }
-                .map_err(|err| TransactionError::AddValue {
+                .map_err(|err| TransactionPropertyError {
                     property_group: tx.pg_error_path(),
                     name: name.to_string().into_boxed_str(),
+                    op: TransactionOp::AddValue,
                     err,
                 })?;
         }
@@ -371,11 +374,13 @@ impl<'a> TransactionEntry<'a> {
                     name.as_c_str().as_ptr(),
                 )
             })
-            .map_err(|err| TransactionError::Delete {
+            .map_err(|err| TransactionPropertyError {
                 property_group: tx.pg_error_path(),
                 name: name.to_string().into_boxed_str(),
+                op: TransactionOp::Delete,
                 err,
-            })
+            })?;
+            Ok(())
         })
     }
 
@@ -394,11 +399,13 @@ impl<'a> TransactionEntry<'a> {
                     value_kind.to_scf_type(),
                 )
             })
-            .map_err(|err| TransactionError::New {
+            .map_err(|err| TransactionPropertyError {
                 property_group: tx.pg_error_path(),
                 name: name.to_string().into_boxed_str(),
+                op: TransactionOp::New,
                 err,
-            })
+            })?;
+            Ok(())
         })
     }
 
@@ -417,11 +424,13 @@ impl<'a> TransactionEntry<'a> {
                     value_kind.to_scf_type(),
                 )
             })
-            .map_err(|err| TransactionError::Change {
+            .map_err(|err| TransactionPropertyError {
                 property_group: tx.pg_error_path(),
                 name: name.to_string().into_boxed_str(),
+                op: TransactionOp::Change,
                 err,
-            })
+            })?;
+            Ok(())
         })
     }
 
@@ -440,11 +449,13 @@ impl<'a> TransactionEntry<'a> {
                     value_kind.to_scf_type(),
                 )
             })
-            .map_err(|err| TransactionError::ChangeType {
+            .map_err(|err| TransactionPropertyError {
                 property_group: tx.pg_error_path(),
                 name: name.to_string().into_boxed_str(),
+                op: TransactionOp::ChangeType,
                 err,
-            })
+            })?;
+            Ok(())
         })
     }
 }

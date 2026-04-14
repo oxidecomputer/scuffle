@@ -8,6 +8,7 @@ use crate::Value;
 use crate::Values;
 use crate::error::ErrorPath;
 use crate::error::IterError;
+use crate::error::IterErrorKind;
 use crate::error::LibscfError;
 use crate::error::LookupError;
 use crate::error::ScfEntity;
@@ -74,10 +75,10 @@ impl<'a, St> Property<'a, St> {
     pub fn values(&self) -> Result<Values<'_, St>, IterError> {
         let iter = ScfUninitializedIter::new(self.scf())?;
         let iter = unsafe { iter.init_property_values(self.handle.as_ptr()) }
-            .map_err(|err| IterError::InitIter {
+            .map_err(|err| IterError::Iter {
             entity: ScfEntity::Value,
             parent: self.error_path(),
-            err,
+            kind: IterErrorKind::Init(err),
         })?;
         Values::new(self, iter)
     }

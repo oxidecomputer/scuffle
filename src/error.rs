@@ -106,40 +106,31 @@ pub(crate) fn format_lookup_target<T: Fmri>(
 }
 
 #[derive(Debug, thiserror::Error)]
+pub enum IterErrorKind {
+    #[error("error initializing iterator")]
+    Init(#[source] LibscfError),
+
+    #[error("error iterating")]
+    Iterating(#[source] LibscfError),
+
+    #[error("error getting name")]
+    GetName(#[source] ScfStringError),
+
+    #[error("error converting value")]
+    GetValue(#[source] GetValueError),
+}
+
+#[derive(Debug, thiserror::Error)]
 pub enum IterError {
     #[error(transparent)]
     HandleCreate(#[from] HandleCreateError),
 
-    #[error("error initializing {entity} iterator over `{parent}`")]
-    InitIter {
+    #[error("{kind} for {entity} over `{parent}`")]
+    Iter {
         entity: ScfEntity,
         parent: Box<str>,
         #[source]
-        err: LibscfError,
-    },
-
-    #[error("error iterating {entity} of `{parent}`")]
-    Iterating {
-        entity: ScfEntity,
-        parent: Box<str>,
-        #[source]
-        err: LibscfError,
-    },
-
-    #[error("error getting name of {entity} while iterating over `{parent}`")]
-    GetName {
-        entity: ScfEntity,
-        parent: Box<str>,
-        #[source]
-        err: ScfStringError,
-    },
-
-    #[error("error converting {entity} value while iterating `{parent}`")]
-    GetValue {
-        entity: ScfEntity,
-        parent: Box<str>,
-        #[source]
-        err: GetValueError,
+        kind: IterErrorKind,
     },
 }
 
@@ -469,6 +460,39 @@ pub enum AddPropertyGroupError {
     DeletedDuringEnsure { parent: Box<str>, name: Box<str> },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransactionOp {
+    Delete,
+    New,
+    Change,
+    ChangeType,
+    AddValue,
+}
+
+// Helper method for use in the error string of `TransactionPropertyError`
+fn format_transaction_op(op: &TransactionOp) -> &'static str {
+    match op {
+        TransactionOp::Delete => "deleting",
+        TransactionOp::New => "creating new",
+        TransactionOp::Change => "changing",
+        TransactionOp::ChangeType => "changing type of",
+        TransactionOp::AddValue => "adding value to",
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "error {} property `{name}` in transaction on `{property_group}`",
+    format_transaction_op(.op),
+)]
+pub struct TransactionPropertyError {
+    pub property_group: Box<str>,
+    pub name: Box<str>,
+    pub op: TransactionOp,
+    #[source]
+    pub err: LibscfError,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum TransactionError {
     #[error(transparent)]
@@ -499,48 +523,8 @@ pub enum TransactionError {
         err: LookupError,
     },
 
-    #[error(
-        "error deleting property `{name}` in transaction on `{property_group}`"
-    )]
-    Delete {
-        property_group: Box<str>,
-        name: Box<str>,
-        #[source]
-        err: LibscfError,
-    },
-
-    #[error(
-        "error creating new property `{name}` in transaction on \
-         `{property_group}`"
-    )]
-    New {
-        property_group: Box<str>,
-        name: Box<str>,
-        #[source]
-        err: LibscfError,
-    },
-
-    #[error(
-        "error changing property `{name}` in transaction on \
-         `{property_group}`"
-    )]
-    Change {
-        property_group: Box<str>,
-        name: Box<str>,
-        #[source]
-        err: LibscfError,
-    },
-
-    #[error(
-        "error changing type of property `{name}` in transaction on \
-         `{property_group}`"
-    )]
-    ChangeType {
-        property_group: Box<str>,
-        name: Box<str>,
-        #[source]
-        err: LibscfError,
-    },
+    #[error(transparent)]
+    Property(#[from] TransactionPropertyError),
 
     #[error(
         "type mismatch on property `{name}` in transaction on \
@@ -563,17 +547,6 @@ pub enum TransactionError {
         name: Box<str>,
         #[source]
         err: SetValueError,
-    },
-
-    #[error(
-        "error adding value to property `{name}` in transaction on \
-         `{property_group}`"
-    )]
-    AddValue {
-        property_group: Box<str>,
-        name: Box<str>,
-        #[source]
-        err: LibscfError,
     },
 
     #[error("failed to commit transaction on `{property_group}`")]

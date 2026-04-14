@@ -7,6 +7,7 @@ use crate::buf::scf_get_name;
 use crate::error::ErrorPath;
 use crate::error::HandleCreateError;
 use crate::error::IterError;
+use crate::error::IterErrorKind;
 use crate::error::LibscfError;
 use crate::error::ScfEntity;
 use crate::scf::ScfObject;
@@ -243,10 +244,10 @@ impl<'a, T: sealed::ScfIterable> ScfIter<'a, T> {
         } {
             0 => None,
             1 => Some(Ok(())),
-            _ => Some(Err(IterError::Iterating {
+            _ => Some(Err(IterError::Iter {
                 entity: T::ENTITY,
                 parent: parent.error_path(),
-                err: LibscfError::last(),
+                kind: IterErrorKind::Iterating(LibscfError::last()),
             })),
         }
     }
@@ -277,10 +278,10 @@ impl<'a, T: sealed::ScfNamedIterable> ScfIter<'a, T> {
         }) {
             Ok(name) => name,
             Err(err) => {
-                return Some(Err(IterError::GetName {
+                return Some(Err(IterError::Iter {
                     entity: T::ENTITY,
                     parent: parent.error_path(),
-                    err,
+                    kind: IterErrorKind::GetName(err),
                 }));
             }
         };

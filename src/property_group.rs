@@ -12,6 +12,7 @@ use crate::Transaction;
 use crate::TransactionReset;
 use crate::error::ErrorPath;
 use crate::error::IterError;
+use crate::error::IterErrorKind;
 use crate::error::LibscfError;
 use crate::error::LookupError;
 use crate::error::ScfEntity;
@@ -124,10 +125,10 @@ impl<'a, St> PropertyGroup<'a, St> {
         let iter = unsafe {
             iter.init_property_group_properties(self.handle.as_ptr())
         }
-        .map_err(|err| IterError::InitIter {
+        .map_err(|err| IterError::Iter {
             entity: ScfEntity::Property,
             parent: self.error_path(),
-            err,
+            kind: IterErrorKind::Init(err),
         })?;
         Ok(Properties::new(self, iter))
     }

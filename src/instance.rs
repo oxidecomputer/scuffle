@@ -16,6 +16,7 @@ use crate::add_property_group::AddPropertyGroupArgs;
 use crate::error::AddPropertyGroupError;
 use crate::error::ErrorPath;
 use crate::error::IterError;
+use crate::error::IterErrorKind;
 use crate::error::LibscfError;
 use crate::error::LookupError;
 use crate::error::ScfEntity;
@@ -123,10 +124,10 @@ impl<'a> Instance<'a> {
                 snapshot,
             )
         }
-        .map_err(|err| IterError::InitIter {
+        .map_err(|err| IterError::Iter {
             entity: ScfEntity::PropertyGroup,
             parent: self.error_path(),
-            err,
+            kind: IterErrorKind::Init(err),
         })
     }
 
@@ -160,10 +161,10 @@ impl<'a> Instance<'a> {
         let iter = ScfUninitializedIter::new(self.scf())?;
         let iter =
             unsafe { iter.init_instance_snapshots(self.handle.as_ptr()) }
-                .map_err(|err| IterError::InitIter {
+                .map_err(|err| IterError::Iter {
                     entity: ScfEntity::Snapshot,
                     parent: self.error_path(),
-                    err,
+                    kind: IterErrorKind::Init(err),
                 })?;
         Ok(Snapshots::new(self, iter))
     }
@@ -220,10 +221,10 @@ impl HasPropertyGroups for Instance<'_> {
         let iter = ScfUninitializedIter::new(self.scf())?;
         let iter =
             unsafe { iter.init_instance_property_groups(self.handle.as_ptr()) }
-                .map_err(|err| IterError::InitIter {
+                .map_err(|err| IterError::Iter {
                     entity: ScfEntity::PropertyGroup,
                     parent: self.error_path(),
-                    err,
+                    kind: IterErrorKind::Init(err),
                 })?;
         Ok(PropertyGroups::from_instance(self, iter))
     }
