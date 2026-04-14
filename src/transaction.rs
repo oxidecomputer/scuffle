@@ -17,31 +17,70 @@ use crate::utf8cstring::Utf8CString;
 use crate::value::ScfValue;
 use std::marker::PhantomData;
 
+/// Type-state marker for a [`Transaction`] in the reset (initial) state.
+///
+/// Reset transactions must be started via [`Transaction::start()`].
 #[derive(Debug)]
 pub enum TransactionReset {}
+
+/// Type-state marker for a [`Transaction`] in the started state.
+///
+/// Started transactions may have entries added to modify properties, may be
+/// reset, and may be committed.
 #[derive(Debug)]
 pub enum TransactionStarted {}
+
+/// Type-state marker for a [`Transaction`] in the committed state.
+///
+/// Committed transactions can only be dropped or reset.
 #[derive(Debug)]
 pub enum TransactionCommitted {}
 
+/// Result of committing a [`Transaction`].
 #[derive(Debug)]
 pub enum TransactionCommitResult<'a, 'pg> {
+    /// Commit succeeded.
     Success(Transaction<'a, 'pg, TransactionCommitted>),
+
+    /// Commit failed because the transaction was out of date.
+    ///
+    /// The associated [`Transaction`] has already been reset; it can be started
+    /// again to retry the change.
     OutOfDate(Transaction<'a, 'pg, TransactionReset>),
 }
 
+/// Transaction for modifying properties within a [`PropertyGroup`].
+///
+/// [`Transaction`] uses a type-state pattern where methods are only available
+/// in particular states. The lifecycle of a `Transaction` is:
+///
+/// 1. Begin in the [`TransactionReset`] state
+/// 2. Call [`Transaction::start()`] to begin the transaction, transitioning to
+///    the [`TransactionStarted`] state.
+/// 3. Call any number of methods to delete, add, or change properties. A given
+///    property may only have one entry in a single transaction.
+/// 4. Either call [`Transaction::reset()`] (return to 1) or
+///    [`Transaction::commit()`] to commit the transaction. On success,
+///    transitions to the terminal [`TransactionCommitted`] state; on "out of
+///    date" (i.e., the property group was concurrently modified), transitions
+///    back to the reset state (1).
 #[derive(Debug)]
 pub struct Transaction<'a, 'pg, St> {
+    // All the real guts of a transaction is held in `TransactionInner` which
+    // does _not_ have the `St` type-state (allowing us to change the type state
+    // by moving `inner` around).
     inner: TransactionInner<'a, 'pg>,
     _state: PhantomData<fn() -> St>,
 }
 
 #[derive(Debug)]
 struct TransactionInner<'a, 'pg> {
+    // Parent property group of this transaction.
     property_group: &'a mut PropertyGroup<'pg, PropertyGroupEditable>,
     handle: ScfObject<'a, libscf_sys::scf_transaction_t>,
-    // We can't drop the entries until the transaction is reset; hold on to them
-    // here.
+    // We don't want to drop the `TransactionEntry` values as long as they're
+    // still associated with the transaction in `handle`. We clear `entries` out
+    // whenever we `reset()`.
     entries: Vec<TransactionEntry<'a>>,
 }
 
@@ -67,6 +106,7 @@ impl TransactionInner<'_, '_> {
 
 // Methods available on transaction in any state.
 impl<'a, 'pg, St> Transaction<'a, 'pg, St> {
+    /// Reset the transaction, clearing any pending entries.
     pub fn reset(mut self) -> Transaction<'a, 'pg, TransactionReset> {
         self.inner.reset();
         Transaction { inner: self.inner, _state: PhantomData }
@@ -97,6 +137,11 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionReset> {
         })
     }
 
+    /// Start the transaction.
+    ///
+    /// Committing a transaction will return
+    /// [`TransactionCommitResult::OutOfDate`] if the property group is modified
+    /// between `start()` and `commit()`.
     pub fn start(
         mut self,
     ) -> Result<Transaction<'a, 'pg, TransactionStarted>, TransactionError>
@@ -160,6 +205,7 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
         Ok(collected)
     }
 
+    /// Delete a property by name.
     pub fn property_delete(
         &mut self,
         name: &str,
@@ -170,6 +216,12 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
         Ok(())
     }
 
+    /// Add a new property with a single value.
+    ///
+    /// # Errors
+    ///
+    /// This method will fail if the property already exists. Consider
+    /// [`Transaction::property_ensure()`] for "add or update" semantics.
     pub fn property_new(
         &mut self,
         name: &str,
@@ -178,6 +230,14 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
         self.property_new_multiple(name, value.kind(), std::iter::once(value))
     }
 
+    /// Add a new property with the given values.
+    ///
+    /// # Errors
+    ///
+    /// This method will fail if the property already exists or if any element
+    /// of `values` has a kind inconsistent with `value_kind`. Consider
+    /// [`Transaction::property_ensure_multiple()`] for "add or update"
+    /// semantics.
     pub fn property_new_multiple<'b, I>(
         &mut self,
         name: &str,
@@ -194,6 +254,13 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
         Ok(())
     }
 
+    /// Change an existing property to have a single value.
+    ///
+    /// # Errors
+    ///
+    /// This method will fail if the property does not exist or if the type of
+    /// `value` is not consistent with the existing property value(s). Consider
+    /// [`Transaction::property_ensure()`] for "add or update" semantics.
     pub fn property_change(
         &mut self,
         name: &str,
@@ -206,6 +273,15 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
         )
     }
 
+    /// Change an existing property to have the given values.
+    ///
+    /// # Errors
+    ///
+    /// This method will fail if the property does not exist, if any element
+    /// of `values` has a kind inconsistent with `value_kind`, or if
+    /// `value_kind` is not consistent with the existing property value(s).
+    /// Consider [`Transaction::property_ensure_multiple()`] for "add or update"
+    /// semantics.
     pub fn property_change_multiple<'b, I>(
         &mut self,
         name: &str,
@@ -223,6 +299,13 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
         Ok(())
     }
 
+    /// Change an existing property to have a single value, changing its type if
+    /// necessary.
+    ///
+    /// # Errors
+    ///
+    /// This method will fail if the property does not exist. Consider
+    /// [`Transaction::property_ensure()`] for "add or update" semantics.
     pub fn property_change_type(
         &mut self,
         name: &str,
@@ -235,6 +318,15 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
         )
     }
 
+    /// Change an existing property to have the given values, changing its type
+    /// if necessary.
+    ///
+    /// # Errors
+    ///
+    /// This method will fail if the property does not exist or if any element
+    /// of `values` has a kind inconsistent with `value_kind`. Consider
+    /// [`Transaction::property_ensure_multiple()`] for "add or update"
+    /// semantics.
     pub fn property_change_type_multiple<'b, I>(
         &mut self,
         name: &str,
@@ -252,6 +344,10 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
         Ok(())
     }
 
+    /// Ensure a property exists with the given single value.
+    ///
+    /// This method will create the property if it does not exist, and will
+    /// change its value (and type if necessary) if it does.
     pub fn property_ensure(
         &mut self,
         name: &str,
@@ -264,6 +360,15 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
         )
     }
 
+    /// Ensure a property exists with the given values.
+    ///
+    /// This method will create the property if it does not exist, and will
+    /// change its values (and type if necessary) if it does.
+    ///
+    /// # Errors
+    ///
+    /// Fails if any element of `values` has a kind inconsistent with
+    /// `value_kind`.
     pub fn property_ensure_multiple<'b, I>(
         &mut self,
         name: &str,
@@ -291,6 +396,7 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
         }
     }
 
+    /// Commit this transaction.
     pub fn commit(
         mut self,
     ) -> Result<TransactionCommitResult<'a, 'pg>, TransactionError> {
