@@ -7,19 +7,26 @@ use crate::PropertyGroup;
 use crate::PropertyGroupEditable;
 use crate::Scf;
 use crate::error::AddPropertyGroupError;
+use crate::error::DeletePropertyGroupError;
 use crate::error::ErrorPath;
 use crate::error::LibscfError;
 use crate::scf::ScfObject;
 use crate::utf8cstring::Utf8CString;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-#[non_exhaustive]
+#[non_exhaustive] // leave the door open for libscf to add more flags
 pub enum AddPropertyGroupFlags {
     Persistent,
     NonPersistent,
 }
 
-pub trait AddPropertyGroup:
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum DeletePropertyGroupResult {
+    Deleted,
+    DoesNotExist,
+}
+
+pub trait EditPropertyGroups:
     HasPropertyGroups<St = PropertyGroupEditable> + ErrorPath
 {
     fn add_property_group(
@@ -66,6 +73,24 @@ pub trait AddPropertyGroup:
                 parent: self.error_path(),
                 name: Box::from(name),
             })
+    }
+
+    fn delete_property_group(
+        &mut self,
+        name: &str,
+    ) -> Result<DeletePropertyGroupResult, DeletePropertyGroupError> {
+        let pg = match self.property_group(name) {
+            Ok(Some(pg)) => pg,
+            Ok(None) => return Ok(DeletePropertyGroupResult::DoesNotExist),
+            Err(err) => {
+                return Err(DeletePropertyGroupError::Lookup {
+                    parent: self.error_path(),
+                    name: name.to_string().into_boxed_str(),
+                    err,
+                });
+            }
+        };
+        pg.delete()
     }
 }
 

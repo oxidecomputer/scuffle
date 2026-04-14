@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use crate::DeletePropertyGroupResult;
 use crate::Instance;
 use crate::Properties;
 use crate::Property;
@@ -10,6 +11,7 @@ use crate::Service;
 use crate::Snapshot;
 use crate::Transaction;
 use crate::TransactionReset;
+use crate::error::DeletePropertyGroupError;
 use crate::error::ErrorPath;
 use crate::error::IterError;
 use crate::error::IterErrorKind;
@@ -202,6 +204,27 @@ impl<'a> PropertyGroup<'a, PropertyGroupEditable> {
         &mut self,
     ) -> Result<Transaction<'_, 'a, TransactionReset>, TransactionError> {
         Transaction::new(self)
+    }
+
+    pub(crate) fn delete(
+        mut self,
+    ) -> Result<DeletePropertyGroupResult, DeletePropertyGroupError> {
+        let result = LibscfError::from_ret(unsafe {
+            libscf_sys::scf_pg_delete(self.handle.as_mut_ptr())
+        });
+        match result {
+            Ok(()) => Ok(DeletePropertyGroupResult::Deleted),
+            // The fact that we have a fully-constructed `PropertyGroup` means
+            // the pg _did_ exist at one point; if we get a `Deleted` here,
+            // that means someone else concurrently deleted us.
+            Err(LibscfError::Deleted) => {
+                Ok(DeletePropertyGroupResult::DoesNotExist)
+            }
+            Err(err) => Err(DeletePropertyGroupError::Delete {
+                description: self.error_path(),
+                err,
+            }),
+        }
     }
 }
 

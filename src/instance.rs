@@ -2,8 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::AddPropertyGroup;
 use crate::AddPropertyGroupFlags;
+use crate::EditPropertyGroups;
 use crate::HasPropertyGroups;
 use crate::PropertyGroup;
 use crate::PropertyGroupEditable;
@@ -12,7 +12,7 @@ use crate::Scf;
 use crate::Service;
 use crate::Snapshot;
 use crate::Snapshots;
-use crate::add_property_group::AddPropertyGroupArgs;
+use crate::edit_property_groups::AddPropertyGroupArgs;
 use crate::error::AddPropertyGroupError;
 use crate::error::ErrorPath;
 use crate::error::IterError;
@@ -170,7 +170,7 @@ impl<'a> Instance<'a> {
     }
 }
 
-impl AddPropertyGroup for Instance<'_> {
+impl EditPropertyGroups for Instance<'_> {
     fn add_property_group(
         &mut self,
         name: &str,

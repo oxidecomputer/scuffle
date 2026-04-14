@@ -5,8 +5,8 @@
 use anyhow::Context;
 use anyhow::bail;
 use clap::Parser;
-use scuffle::AddPropertyGroup;
 use scuffle::AddPropertyGroupFlags;
+use scuffle::EditPropertyGroups;
 use scuffle::Scf;
 use scuffle::TransactionCommitResult;
 use scuffle::Value;
@@ -47,7 +47,7 @@ fn parse_value(s: &str) -> anyhow::Result<Value> {
 }
 
 fn run(
-    target: &mut impl AddPropertyGroup,
+    target: &mut impl EditPropertyGroups,
     name: &str,
     pg_name: &str,
     pg_type: &str,

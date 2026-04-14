@@ -462,6 +462,27 @@ pub enum AddPropertyGroupError {
     DeletedDuringEnsure { parent: Box<str>, name: Box<str> },
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum DeletePropertyGroupError {
+    #[error(
+        "failed to look up property group `{name}` for deletion on \
+         `{parent}`"
+    )]
+    Lookup {
+        parent: Box<str>,
+        name: Box<str>,
+        #[source]
+        err: LookupError,
+    },
+
+    #[error("failed to delete property group `{description}`")]
+    Delete {
+        description: Box<str>,
+        #[source]
+        err: LibscfError,
+    },
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransactionOp {
     Delete,
