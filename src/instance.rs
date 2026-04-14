@@ -19,6 +19,7 @@ use crate::error::IterError;
 use crate::error::IterErrorKind;
 use crate::error::LibscfError;
 use crate::error::LookupError;
+use crate::error::RefreshError;
 use crate::error::ScfEntity;
 use crate::error::format_lookup_target;
 use crate::iter::ScfIter;
@@ -137,6 +138,10 @@ impl<'a> Instance<'a> {
 
     pub fn fmri(&self) -> &str {
         self.fmri.as_str()
+    }
+
+    pub fn refresh(&self) -> Result<(), RefreshError> {
+        self.scf().refresh_cstr(self.fmri.as_c_str())
     }
 
     pub(crate) fn fmri_internal(&self) -> &InstanceFmri {
