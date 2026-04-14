@@ -2,18 +2,18 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use crate::ValueKind;
+use chrono::DateTime;
+use chrono::Utc;
+use num_traits::FromPrimitive;
 use std::ffi::FromBytesWithNulError;
 use std::ffi::NulError;
 use std::fmt;
 use std::ptr::NonNull;
 use std::str::Utf8Error;
 
-use chrono::DateTime;
-use chrono::Utc;
-use num_traits::FromPrimitive;
-
 #[cfg(any(test, feature = "testing"))]
-use crate::isolated::IsolatedConfigdRefreshError;
+pub use crate::isolated::IsolatedConfigdRefreshError;
 
 pub(crate) trait ErrorPath {
     /// String describing an entity in the SMF tree for the purposes of error
@@ -449,4 +449,141 @@ pub enum SingleValueError {
 
     #[error("error getting single value")]
     IterError(#[from] IterError),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum TransactionError {
+    #[error("failed to create transaction on `{property_group}`")]
+    HandleCreate {
+        property_group: String,
+        #[source]
+        err: LibscfError,
+    },
+
+    #[error("failed to start transaction on `{property_group}`")]
+    Start {
+        property_group: String,
+        #[source]
+        err: LibscfError,
+    },
+
+    #[error("invalid property name in transaction on `{property_group}`")]
+    InvalidName {
+        property_group: String,
+        #[source]
+        err: NulError,
+    },
+
+    #[error("error creating entry in transaction on `{property_group}`")]
+    CreateEntry {
+        property_group: String,
+        #[source]
+        err: LibscfError,
+    },
+
+    #[error(
+        "error looking up existence of property `{name}` on \
+         `{property_group}`"
+    )]
+    ExistenceLookup {
+        property_group: String,
+        name: String,
+        #[source]
+        err: LookupError,
+    },
+
+    #[error(
+        "error deleting property `{name}` in transaction on `{property_group}`"
+    )]
+    Delete {
+        property_group: String,
+        name: String,
+        #[source]
+        err: LibscfError,
+    },
+
+    #[error(
+        "error creating new property `{name}` in transaction on \
+         `{property_group}`"
+    )]
+    New {
+        property_group: String,
+        name: String,
+        #[source]
+        err: LibscfError,
+    },
+
+    #[error(
+        "error changing property `{name}` in transaction on \
+         `{property_group}`"
+    )]
+    Change {
+        property_group: String,
+        name: String,
+        #[source]
+        err: LibscfError,
+    },
+
+    #[error(
+        "error changing type of property `{name}` in transaction on \
+         `{property_group}`"
+    )]
+    ChangeType {
+        property_group: String,
+        name: String,
+        #[source]
+        err: LibscfError,
+    },
+
+    #[error(
+        "type mismatch on property `{name}` in transaction on \
+         `{property_group}`: property has type {property_type} but value \
+         has type {value_type}"
+    )]
+    TypeMismatch {
+        property_group: String,
+        name: String,
+        property_type: ValueKind,
+        value_type: ValueKind,
+    },
+
+    #[error(
+        "error creating value for property `{name}` in transaction on \
+         `{property_group}`"
+    )]
+    CreateValue {
+        property_group: String,
+        name: String,
+        #[source]
+        err: LibscfError,
+    },
+
+    #[error(
+        "error setting value for property `{name}` in transaction on \
+         `{property_group}`"
+    )]
+    SetValue {
+        property_group: String,
+        name: String,
+        #[source]
+        err: SetValueError,
+    },
+
+    #[error(
+        "error adding value to property `{name}` in transaction on \
+         `{property_group}`"
+    )]
+    AddValue {
+        property_group: String,
+        name: String,
+        #[source]
+        err: LibscfError,
+    },
+
+    #[error("failed to commit transaction on `{property_group}`")]
+    Commit {
+        property_group: String,
+        #[source]
+        err: LibscfError,
+    },
 }

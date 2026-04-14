@@ -21,6 +21,7 @@ use crate::scf::ScfObject;
 use crate::utf8cstring::Utf8CString;
 use std::marker::PhantomData;
 
+#[derive(Debug)]
 pub struct Service<'a> {
     // Lifetime that binds us to the parent `Scope`, ensuring we outlive it.
     _scope: PhantomData<&'a ()>,

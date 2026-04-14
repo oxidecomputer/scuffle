@@ -21,6 +21,7 @@ use crate::iter::ScfUninitializedIter;
 use crate::scf::ScfObject;
 use crate::utf8cstring::Utf8CString;
 
+#[derive(Debug)]
 pub struct Instance<'a> {
     service: &'a Service<'a>,
     name: Utf8CString,

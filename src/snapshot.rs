@@ -17,6 +17,7 @@ use crate::iter::ScfIter;
 use crate::scf::ScfObject;
 use crate::utf8cstring::Utf8CString;
 
+#[derive(Debug)]
 pub struct Snapshot<'a> {
     instance: &'a Instance<'a>,
     name: Utf8CString,

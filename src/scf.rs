@@ -31,6 +31,7 @@ pub enum Zone<'a> {
 // We intentionally do not impl `Send` or `Sync` for `Scf`. Errors flow out
 // through the thread-local `scf_error()` function, so we don't want to mix
 // use of the same handle across different threads.
+#[derive(Debug)]
 pub struct Scf<'a> {
     did_bind_handle: bool,
     handle: NonNull<libscf_sys::scf_handle_t>,
@@ -216,6 +217,7 @@ impl<'a> From<&'a IsolatedConfigd> for ConnectMode<'a> {
     }
 }
 
+#[derive(Debug)]
 enum RefreshMechanism<'a> {
     // This variant stores a `PhantomData` so we don't get an unused lifetime
     // error in non-test builds, which only have this variant.

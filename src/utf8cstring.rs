@@ -8,6 +8,7 @@ use std::ffi::CString;
 use std::ffi::NulError;
 use std::str::Utf8Error;
 
+#[derive(Debug)]
 pub(crate) struct Utf8CString(CString);
 
 impl Utf8CString {

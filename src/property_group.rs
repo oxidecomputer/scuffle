@@ -8,21 +8,27 @@ use crate::Property;
 use crate::Scf;
 use crate::Service;
 use crate::Snapshot;
+use crate::Transaction;
+use crate::TransactionReset;
 use crate::error::ErrorPath;
 use crate::error::IterEntity;
 use crate::error::IterError;
 use crate::error::LibscfError;
 use crate::error::LookupEntity;
 use crate::error::LookupError;
+use crate::error::TransactionError;
 use crate::iter::ScfIter;
 use crate::iter::ScfUninitializedIter;
 use crate::scf::ScfObject;
 use crate::utf8cstring::Utf8CString;
 use std::marker::PhantomData;
 
+#[derive(Debug)]
 pub enum PropertyGroupEditable {}
+#[derive(Debug)]
 pub enum PropertyGroupSnapshot {}
 
+#[derive(Debug)]
 pub struct PropertyGroup<'a, St> {
     parent: PropertyGroupParent<'a>,
     name: Utf8CString,
@@ -142,6 +148,25 @@ impl<'a> PropertyGroup<'a, PropertyGroupEditable> {
     ) -> Result<Option<Self>, LookupError> {
         Self::from_parent(PropertyGroupParent::Instance(instance), name)
     }
+
+    pub(crate) unsafe fn scf_transaction_start(
+        &mut self,
+        tx: *mut libscf_sys::scf_transaction_t,
+    ) -> Result<(), LibscfError> {
+        LibscfError::from_ret(unsafe {
+            libscf_sys::scf_transaction_start(tx, self.handle.as_mut_ptr())
+        })
+    }
+
+    // `TransactionError` is slightly larger than clippy's threshold for large
+    // errors, but boxing variants makes matching very painful. Live with large
+    // errors.
+    #[allow(clippy::result_large_err)]
+    pub fn transaction(
+        &mut self,
+    ) -> Result<Transaction<'_, 'a, TransactionReset>, TransactionError> {
+        Transaction::new(self)
+    }
 }
 
 // Methods only available on snapshot property groups.
@@ -154,7 +179,7 @@ impl<'a> PropertyGroup<'a, PropertyGroupSnapshot> {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 enum PropertyGroupParent<'a> {
     Service(&'a Service<'a>),
     Instance(&'a Instance<'a>),

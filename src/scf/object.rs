@@ -17,6 +17,7 @@
 
 use super::Scf;
 use crate::error::LibscfError;
+use std::fmt;
 use std::ptr::NonNull;
 
 mod sealed {
@@ -66,11 +67,26 @@ impl_scf_type!(scf_service_t, scf_service_create, scf_service_destroy);
 impl_scf_type!(scf_snapshot_t, scf_snapshot_create, scf_snapshot_destroy);
 impl_scf_type!(scf_property_t, scf_property_create, scf_property_destroy);
 impl_scf_type!(scf_propertygroup_t, scf_pg_create, scf_pg_destroy);
+impl_scf_type!(
+    scf_transaction_t,
+    scf_transaction_create,
+    scf_transaction_destroy
+);
+impl_scf_type!(scf_transaction_entry_t, scf_entry_create, scf_entry_destroy);
 impl_scf_type!(scf_value_t, scf_value_create, scf_value_destroy);
 
 pub(crate) struct ScfObject<'scf, T: ScfObjectType> {
     scf: &'scf Scf<'scf>,
     handle: NonNull<T>,
+}
+
+impl<T: ScfObjectType> fmt::Debug for ScfObject<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ScfObject")
+            .field("scf", &self.scf)
+            .field("handle", &self.handle.as_ptr())
+            .finish()
+    }
 }
 
 impl<T: ScfObjectType> Drop for ScfObject<'_, T> {

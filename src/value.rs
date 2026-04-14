@@ -98,6 +98,25 @@ pub enum Value {
 }
 
 impl Value {
+    pub fn kind(&self) -> ValueKind {
+        match self {
+            Self::Bool(_) => ValueKind::Bool,
+            Self::Count(_) => ValueKind::Count,
+            Self::Integer(_) => ValueKind::Integer,
+            Self::Time(_) => ValueKind::Time,
+            Self::AString(_) => ValueKind::AString,
+            Self::Opaque(_) => ValueKind::Opaque,
+            Self::UString(_) => ValueKind::UString,
+            Self::Uri(_) => ValueKind::Uri,
+            Self::Fmri(_) => ValueKind::Fmri,
+            Self::Host(_) => ValueKind::Host,
+            Self::Hostname(_) => ValueKind::Hostname,
+            Self::NetAddrV4(_) | Self::NetV4(_) => ValueKind::NetAddrV4,
+            Self::NetAddrV6(_) | Self::NetV6(_) => ValueKind::NetAddrV6,
+            Self::NetAddr(_) | Self::Net(_) => ValueKind::NetAddr,
+        }
+    }
+
     pub fn as_value_ref(&self) -> ValueRef<'_> {
         match self {
             Self::Bool(b) => ValueRef::Bool(*b),
@@ -129,6 +148,69 @@ impl Value {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ValueKind {
+    Bool,
+    Count,
+    Integer,
+    Time,
+    AString,
+    Opaque,
+    UString,
+    Uri,
+    Fmri,
+    Host,
+    Hostname,
+    NetAddrV4,
+    NetAddrV6,
+    NetAddr,
+}
+
+impl fmt::Display for ValueKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            ValueKind::Bool => "boolean",
+            ValueKind::Count => "count",
+            ValueKind::Integer => "integer",
+            ValueKind::Time => "time",
+            ValueKind::AString => "astring",
+            ValueKind::Opaque => "opaque",
+            ValueKind::UString => "ustring",
+            ValueKind::Uri => "uri",
+            ValueKind::Fmri => "fmri",
+            ValueKind::Host => "host",
+            ValueKind::Hostname => "hostname",
+            ValueKind::NetAddrV4 => "net_address_v4",
+            ValueKind::NetAddrV6 => "net_address_v6",
+            ValueKind::NetAddr => "net_address",
+        };
+        s.fmt(f)
+    }
+}
+
+impl ValueKind {
+    pub(crate) fn to_scf_type(self) -> libscf_sys::scf_type_t {
+        use libscf_sys::scf_type_t::*;
+
+        match self {
+            ValueKind::Bool => SCF_TYPE_BOOLEAN,
+            ValueKind::Count => SCF_TYPE_COUNT,
+            ValueKind::Integer => SCF_TYPE_INTEGER,
+            ValueKind::Time => SCF_TYPE_TIME,
+            ValueKind::AString => SCF_TYPE_ASTRING,
+            ValueKind::Opaque => SCF_TYPE_OPAQUE,
+            ValueKind::UString => SCF_TYPE_USTRING,
+            ValueKind::Uri => SCF_TYPE_URI,
+            ValueKind::Fmri => SCF_TYPE_FMRI,
+            ValueKind::Host => SCF_TYPE_HOST,
+            ValueKind::Hostname => SCF_TYPE_HOSTNAME,
+            ValueKind::NetAddrV4 => SCF_TYPE_NET_ADDR_V4,
+            ValueKind::NetAddrV6 => SCF_TYPE_NET_ADDR_V6,
+            ValueKind::NetAddr => SCF_TYPE_NET_ADDR,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ValueRef<'a> {
     Bool(bool),
     Count(u64),
@@ -150,6 +232,25 @@ pub enum ValueRef<'a> {
 }
 
 impl<'a> ValueRef<'a> {
+    pub fn kind(&self) -> ValueKind {
+        match self {
+            Self::Bool(_) => ValueKind::Bool,
+            Self::Count(_) => ValueKind::Count,
+            Self::Integer(_) => ValueKind::Integer,
+            Self::Time(_) => ValueKind::Time,
+            Self::AString(_) => ValueKind::AString,
+            Self::Opaque(_) => ValueKind::Opaque,
+            Self::UString(_) => ValueKind::UString,
+            Self::Uri(_) => ValueKind::Uri,
+            Self::Fmri(_) => ValueKind::Fmri,
+            Self::Host(_) => ValueKind::Host,
+            Self::Hostname(_) => ValueKind::Hostname,
+            Self::NetAddrV4(_) | Self::NetV4(_) => ValueKind::NetAddrV4,
+            Self::NetAddrV6(_) | Self::NetV6(_) => ValueKind::NetAddrV6,
+            Self::NetAddr(_) | Self::Net(_) => ValueKind::NetAddr,
+        }
+    }
+
     pub fn to_value(&self) -> Value {
         match self {
             Self::Bool(b) => Value::Bool(*b),
@@ -219,6 +320,7 @@ impl fmt::Display for ValueDisplaySmf<'_> {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct ScfValue<'a> {
     handle: ScfObject<'a, libscf_sys::scf_value_t>,
 }
@@ -244,6 +346,15 @@ impl ScfValue<'_> {
                 // Header takes non-const but I think it's read-only.
                 self.handle.as_mut_ptr(),
             )
+        })
+    }
+
+    pub(crate) unsafe fn scf_add_to_transaction_entry(
+        &mut self,
+        entry: *mut libscf_sys::scf_transaction_entry_t,
+    ) -> Result<(), LibscfError> {
+        LibscfError::from_ret(unsafe {
+            libscf_sys::scf_entry_add_value(entry, self.handle.as_mut_ptr())
         })
     }
 

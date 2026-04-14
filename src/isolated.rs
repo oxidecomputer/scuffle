@@ -37,6 +37,7 @@ const SIGINT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 // show up?
 const SVC_CONFIGD_DOOR_CREATE_TIMEOUT: Duration = Duration::from_secs(10);
 
+#[derive(Debug)]
 pub struct IsolatedConfigd {
     dir: Utf8TempDir,
     // This is always `dir.join(IsolatedConfigdBuilder::DOOR_FILENAME)`, but we
@@ -481,6 +482,7 @@ fn write_service_manifest(
     })
 }
 
+#[derive(Debug)]
 struct KillOnDrop(Option<Child>);
 
 impl Drop for KillOnDrop {
