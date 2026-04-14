@@ -15,8 +15,7 @@ pub struct Scope<'a> {
 
 impl<'a> Scope<'a> {
     pub(crate) fn new_local(scf: &'a Scf) -> Result<Self, ScopeError> {
-        let mut handle =
-            scf.scf_scope_create().map_err(ScopeError::HandleCreate)?;
+        let mut handle = scf.scf_scope_create()?;
 
         unsafe { scf.scf_get_scope_local(handle.as_mut_ptr()) }
             .map_err(ScopeError::GetLocalScope)?;

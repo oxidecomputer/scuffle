@@ -33,10 +33,15 @@ pub(crate) use sealed::ErrorPath;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScfEntity {
     Instance,
+    Iter,
+    Scf,
     Service,
     Snapshot,
     PropertyGroup,
     Property,
+    Scope,
+    Transaction,
+    TransactionEntry,
     Value,
 }
 
@@ -44,10 +49,15 @@ impl fmt::Display for ScfEntity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
             Self::Instance => "instance",
+            Self::Iter => "iterator",
+            Self::Scf => "scf",
             Self::Service => "service",
             Self::Snapshot => "snapshot",
             Self::PropertyGroup => "property group",
             Self::Property => "property",
+            Self::Scope => "scope",
+            Self::Transaction => "transaction",
+            Self::TransactionEntry => "transaction entry",
             Self::Value => "value",
         };
         s.fmt(f)
@@ -55,21 +65,24 @@ impl fmt::Display for ScfEntity {
 }
 
 #[derive(Debug, thiserror::Error)]
+#[error("error creating {entity} handle")]
+pub struct HandleCreateError {
+    pub entity: ScfEntity,
+    #[source]
+    pub err: LibscfError,
+}
+
+#[derive(Debug, thiserror::Error)]
 pub enum LookupError {
+    #[error(transparent)]
+    HandleCreate(#[from] HandleCreateError),
+
     #[error("invalid {entity} name {name}")]
     InvalidName {
         entity: ScfEntity,
         name: Box<str>,
         #[source]
         err: NulError,
-    },
-
-    #[error("error creating handle for {entity} {target}")]
-    HandleCreate {
-        entity: ScfEntity,
-        target: Box<str>,
-        #[source]
-        err: LibscfError,
     },
 
     #[error("error getting {entity} {target}")]
@@ -94,24 +107,11 @@ pub(crate) fn format_lookup_target<T: Fmri>(
 
 #[derive(Debug, thiserror::Error)]
 pub enum IterError {
-    #[error("error creating {entity} iterator over `{parent}`")]
-    CreateIter {
-        entity: ScfEntity,
-        parent: Box<str>,
-        #[source]
-        err: LibscfError,
-    },
+    #[error(transparent)]
+    HandleCreate(#[from] HandleCreateError),
 
     #[error("error initializing {entity} iterator over `{parent}`")]
     InitIter {
-        entity: ScfEntity,
-        parent: Box<str>,
-        #[source]
-        err: LibscfError,
-    },
-
-    #[error("error creating {entity} while iterating over `{parent}`")]
-    CreateItem {
         entity: ScfEntity,
         parent: Box<str>,
         #[source]
@@ -276,8 +276,8 @@ pub enum ScfStringError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ScopeError {
-    #[error("error creating scope handle")]
-    HandleCreate(#[source] LibscfError),
+    #[error(transparent)]
+    HandleCreate(#[from] HandleCreateError),
 
     #[error("error getting local scope")]
     GetLocalScope(#[source] LibscfError),
@@ -285,20 +285,11 @@ pub enum ScopeError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ScfError {
-    #[error("error creating scf handle")]
-    HandleCreate(#[source] LibscfError),
+    #[error(transparent)]
+    HandleCreate(#[from] HandleCreateError),
 
     #[error("error binding scf handle")]
     HandleBind(#[source] LibscfError),
-
-    #[error(
-        "error creating zone name value for zone {zonename} during connect"
-    )]
-    CreateZoneName {
-        zonename: Box<str>,
-        #[source]
-        err: LibscfError,
-    },
 
     #[error("error setting zone name to {zonename} during connect")]
     SetZoneName {
@@ -310,14 +301,6 @@ pub enum ScfError {
     #[error("error setting decoration to attach to zone {zonename}")]
     SetDecorationZoneName {
         zonename: Box<str>,
-        #[source]
-        err: LibscfError,
-    },
-
-    #[cfg(any(test, feature = "testing"))]
-    #[error("error creating door path value to {door_path} during connect")]
-    CreateDoorPath {
-        door_path: Box<str>,
         #[source]
         err: LibscfError,
     },
@@ -441,6 +424,9 @@ pub enum SingleValueError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum AddPropertyGroupError {
+    #[error(transparent)]
+    HandleCreate(#[from] HandleCreateError),
+
     #[error("invalid property group name {name:?} in `{parent}`")]
     InvalidName {
         parent: Box<str>,
@@ -455,13 +441,6 @@ pub enum AddPropertyGroupError {
         pg_type: Box<str>,
         #[source]
         err: NulError,
-    },
-
-    #[error("failed to create property group handle for `{parent}`")]
-    HandleCreate {
-        parent: Box<str>,
-        #[source]
-        err: LibscfError,
     },
 
     #[error("failed to add property group `{name}` to `{parent}`")]
@@ -492,12 +471,8 @@ pub enum AddPropertyGroupError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum TransactionError {
-    #[error("failed to create transaction on `{property_group}`")]
-    HandleCreate {
-        property_group: Box<str>,
-        #[source]
-        err: LibscfError,
-    },
+    #[error(transparent)]
+    HandleCreate(#[from] HandleCreateError),
 
     #[error("failed to start transaction on `{property_group}`")]
     Start {
@@ -511,13 +486,6 @@ pub enum TransactionError {
         property_group: Box<str>,
         #[source]
         err: NulError,
-    },
-
-    #[error("error creating entry in transaction on `{property_group}`")]
-    CreateEntry {
-        property_group: Box<str>,
-        #[source]
-        err: LibscfError,
     },
 
     #[error(
@@ -584,17 +552,6 @@ pub enum TransactionError {
         name: Box<str>,
         property_type: ValueKind,
         value_type: ValueKind,
-    },
-
-    #[error(
-        "error creating value for property `{name}` in transaction on \
-         `{property_group}`"
-    )]
-    CreateValue {
-        property_group: Box<str>,
-        name: Box<str>,
-        #[source]
-        err: LibscfError,
     },
 
     #[error(

@@ -50,14 +50,7 @@ impl<'a> Instance<'a> {
 
         let fmri = service.instance_fmri(&name);
 
-        let mut handle =
-            service.scf().scf_instance_create().map_err(|err| {
-                LookupError::HandleCreate {
-                    entity: ScfEntity::Instance,
-                    target: format_lookup_target(&fmri, None),
-                    err,
-                }
-            })?;
+        let mut handle = service.scf().scf_instance_create()?;
 
         let result = unsafe {
             service
@@ -123,13 +116,7 @@ impl<'a> Instance<'a> {
         &self,
         snapshot: *const libscf_sys::scf_snapshot_t,
     ) -> Result<ScfIter<'_, libscf_sys::scf_propertygroup_t>, IterError> {
-        let iter = ScfUninitializedIter::new(self.scf()).map_err(|err| {
-            IterError::CreateIter {
-                entity: ScfEntity::PropertyGroup,
-                parent: self.error_path(),
-                err,
-            }
-        })?;
+        let iter = ScfUninitializedIter::new(self.scf())?;
         unsafe {
             iter.init_instance_property_groups_composed(
                 self.handle.as_ptr(),
@@ -170,13 +157,7 @@ impl<'a> Instance<'a> {
     }
 
     pub fn snapshots(&self) -> Result<Snapshots<'_>, IterError> {
-        let iter = ScfUninitializedIter::new(self.scf()).map_err(|err| {
-            IterError::CreateIter {
-                entity: ScfEntity::Snapshot,
-                parent: self.error_path(),
-                err,
-            }
-        })?;
+        let iter = ScfUninitializedIter::new(self.scf())?;
         let iter =
             unsafe { iter.init_instance_snapshots(self.handle.as_ptr()) }
                 .map_err(|err| IterError::InitIter {
@@ -236,13 +217,7 @@ impl HasPropertyGroups for Instance<'_> {
     fn property_groups(
         &self,
     ) -> Result<PropertyGroups<'_, Self::St>, IterError> {
-        let iter = ScfUninitializedIter::new(self.scf()).map_err(|err| {
-            IterError::CreateIter {
-                entity: ScfEntity::PropertyGroup,
-                parent: self.error_path(),
-                err,
-            }
-        })?;
+        let iter = ScfUninitializedIter::new(self.scf())?;
         let iter =
             unsafe { iter.init_instance_property_groups(self.handle.as_ptr()) }
                 .map_err(|err| IterError::InitIter {

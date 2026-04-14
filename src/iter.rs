@@ -5,6 +5,7 @@
 use crate::Scf;
 use crate::buf::scf_get_name;
 use crate::error::ErrorPath;
+use crate::error::HandleCreateError;
 use crate::error::IterError;
 use crate::error::LibscfError;
 use crate::error::ScfEntity;
@@ -131,7 +132,7 @@ pub(crate) struct ScfUninitializedIter<'a> {
 }
 
 impl<'a> ScfUninitializedIter<'a> {
-    pub(crate) fn new(scf: &'a Scf<'a>) -> Result<Self, LibscfError> {
+    pub(crate) fn new(scf: &'a Scf<'a>) -> Result<Self, HandleCreateError> {
         Ok(Self { handle: scf.scf_iter_create()? })
     }
 
@@ -259,17 +260,11 @@ impl<'a, T: sealed::ScfNamedIterable> ScfIter<'a, T> {
     ) -> Option<Result<(Utf8CString, ScfObject<'a, T>), IterError>>
     where
         P: ErrorPath,
-        F: FnOnce() -> Result<ScfObject<'a, T>, LibscfError>,
+        F: FnOnce() -> Result<ScfObject<'a, T>, HandleCreateError>,
     {
         let mut handle = match make_handle() {
             Ok(handle) => handle,
-            Err(err) => {
-                return Some(Err(IterError::CreateItem {
-                    entity: T::ENTITY,
-                    parent: parent.error_path(),
-                    err,
-                }));
-            }
+            Err(err) => return Some(Err(err.into())),
         };
 
         match self.next_with_handle(parent, &mut handle)? {

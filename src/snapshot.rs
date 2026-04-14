@@ -39,17 +39,7 @@ impl<'a> Snapshot<'a> {
             }
         })?;
 
-        let mut handle =
-            instance.scf().scf_snapshot_create().map_err(|err| {
-                LookupError::HandleCreate {
-                    entity: ScfEntity::Snapshot,
-                    target: format_lookup_target(
-                        instance.fmri_internal(),
-                        None,
-                    ),
-                    err,
-                }
-            })?;
+        let mut handle = instance.scf().scf_snapshot_create()?;
 
         let result = unsafe {
             instance

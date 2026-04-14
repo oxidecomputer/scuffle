@@ -16,7 +16,9 @@
 //! point.
 
 use super::Scf;
+use crate::error::HandleCreateError;
 use crate::error::LibscfError;
+use crate::error::ScfEntity;
 use std::fmt;
 use std::ptr::NonNull;
 
@@ -30,7 +32,7 @@ pub(crate) trait ScfObjectType: sealed::Sealed {
 }
 
 macro_rules! impl_scf_type {
-    ($type:ident, $create:ident, $destroy:ident) => {
+    ($entity:ident, $type:ident, $create:ident, $destroy:ident) => {
         impl sealed::Sealed for libscf_sys::$type {}
 
         impl ScfObjectType for libscf_sys::$type {
@@ -48,32 +50,64 @@ macro_rules! impl_scf_type {
         impl Scf<'_> {
             pub(crate) fn $create(
                 &self,
-            ) -> Result<ScfObject<'_, libscf_sys::$type>, LibscfError> {
-                let handle = LibscfError::from_ptr(unsafe {
+            ) -> Result<ScfObject<'_, libscf_sys::$type>, HandleCreateError>
+            {
+                match LibscfError::from_ptr(unsafe {
                     <libscf_sys::$type as ScfObjectType>::create(
                         self.handle.as_ptr(),
                     )
-                })?;
-                Ok(ScfObject { scf: self, handle })
+                }) {
+                    Ok(handle) => Ok(ScfObject { scf: self, handle }),
+                    Err(err) => Err(HandleCreateError {
+                        entity: ScfEntity::$entity,
+                        err,
+                    }),
+                }
             }
         }
     };
 }
 
-impl_scf_type!(scf_instance_t, scf_instance_create, scf_instance_destroy);
-impl_scf_type!(scf_iter_t, scf_iter_create, scf_iter_destroy);
-impl_scf_type!(scf_scope_t, scf_scope_create, scf_scope_destroy);
-impl_scf_type!(scf_service_t, scf_service_create, scf_service_destroy);
-impl_scf_type!(scf_snapshot_t, scf_snapshot_create, scf_snapshot_destroy);
-impl_scf_type!(scf_property_t, scf_property_create, scf_property_destroy);
-impl_scf_type!(scf_propertygroup_t, scf_pg_create, scf_pg_destroy);
 impl_scf_type!(
+    Instance,
+    scf_instance_t,
+    scf_instance_create,
+    scf_instance_destroy
+);
+impl_scf_type!(Iter, scf_iter_t, scf_iter_create, scf_iter_destroy);
+impl_scf_type!(Scope, scf_scope_t, scf_scope_create, scf_scope_destroy);
+impl_scf_type!(Service, scf_service_t, scf_service_create, scf_service_destroy);
+impl_scf_type!(
+    Snapshot,
+    scf_snapshot_t,
+    scf_snapshot_create,
+    scf_snapshot_destroy
+);
+impl_scf_type!(
+    Property,
+    scf_property_t,
+    scf_property_create,
+    scf_property_destroy
+);
+impl_scf_type!(
+    PropertyGroup,
+    scf_propertygroup_t,
+    scf_pg_create,
+    scf_pg_destroy
+);
+impl_scf_type!(
+    Transaction,
     scf_transaction_t,
     scf_transaction_create,
     scf_transaction_destroy
 );
-impl_scf_type!(scf_transaction_entry_t, scf_entry_create, scf_entry_destroy);
-impl_scf_type!(scf_value_t, scf_value_create, scf_value_destroy);
+impl_scf_type!(
+    TransactionEntry,
+    scf_transaction_entry_t,
+    scf_entry_create,
+    scf_entry_destroy
+);
+impl_scf_type!(Value, scf_value_t, scf_value_create, scf_value_destroy);
 
 pub(crate) struct ScfObject<'scf, T: ScfObjectType> {
     scf: &'scf Scf<'scf>,

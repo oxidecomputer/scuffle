@@ -8,6 +8,7 @@ use crate::buf::scf_get_string;
 use crate::buf::with_scf_value_buf;
 use crate::error::ErrorPath;
 use crate::error::GetValueError;
+use crate::error::HandleCreateError;
 use crate::error::IterError;
 use crate::error::LibscfError;
 use crate::error::ScfEntity;
@@ -326,7 +327,7 @@ pub(crate) struct ScfValue<'a> {
 }
 
 impl<'scf> ScfValue<'scf> {
-    pub(crate) fn new(scf: &'scf Scf<'scf>) -> Result<Self, LibscfError> {
+    pub(crate) fn new(scf: &'scf Scf<'scf>) -> Result<Self, HandleCreateError> {
         let handle = scf.scf_value_create()?;
         Ok(Self { handle })
     }
@@ -646,13 +647,7 @@ impl<'a, St> Values<'a, St> {
         parent: &'a Property<'a, St>,
         iter: ScfIter<'a, libscf_sys::scf_value_t>,
     ) -> Result<Self, IterError> {
-        let value = ScfValue::new(parent.scf()).map_err(|err| {
-            IterError::CreateItem {
-                entity: ScfEntity::Value,
-                parent: parent.error_path(),
-                err,
-            }
-        })?;
+        let value = ScfValue::new(parent.scf())?;
         Ok(Self { parent, value, iter })
     }
 }

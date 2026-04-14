@@ -84,13 +84,7 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionReset> {
     pub(crate) fn new(
         property_group: &'a mut PropertyGroup<'pg, PropertyGroupEditable>,
     ) -> Result<Self, TransactionError> {
-        let handle =
-            property_group.scf().scf_transaction_create().map_err(|err| {
-                TransactionError::HandleCreate {
-                    property_group: property_group.error_path(),
-                    err,
-                }
-            })?;
+        let handle = property_group.scf().scf_transaction_create()?;
         Ok(Self {
             inner: TransactionInner {
                 property_group,
@@ -152,13 +146,7 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
                 });
             }
 
-            let mut scf_val = ScfValue::new(self.scf()).map_err(|err| {
-                TransactionError::CreateValue {
-                    property_group: self.pg_error_path(),
-                    name: name.to_string().into_boxed_str(),
-                    err,
-                }
-            })?;
+            let mut scf_val = ScfValue::new(self.scf())?;
             scf_val.set(val).map_err(|err| TransactionError::SetValue {
                 property_group: self.pg_error_path(),
                 name: name.to_string().into_boxed_str(),
@@ -353,12 +341,7 @@ impl<'a> TransactionEntry<'a> {
             &mut ScfObject<'a, libscf_sys::scf_transaction_entry_t>,
         ) -> Result<(), TransactionError>,
     {
-        let mut handle = tx.scf().scf_entry_create().map_err(|err| {
-            TransactionError::CreateEntry {
-                property_group: tx.pg_error_path(),
-                err,
-            }
-        })?;
+        let mut handle = tx.scf().scf_entry_create()?;
 
         f(tx, name, &mut handle)?;
 

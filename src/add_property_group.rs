@@ -100,12 +100,7 @@ impl<'a> AddPropertyGroupArgs<'a> {
             }
         })?;
 
-        let handle = scf.scf_pg_create().map_err(|err| {
-            AddPropertyGroupError::HandleCreate {
-                parent: parent.error_path(),
-                err,
-            }
-        })?;
+        let handle = scf.scf_pg_create()?;
 
         let flags = match flags {
             AddPropertyGroupFlags::Persistent => 0,

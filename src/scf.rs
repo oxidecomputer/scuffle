@@ -4,8 +4,10 @@
 
 use crate::Scope;
 use crate::ValueRef;
+use crate::error::HandleCreateError;
 use crate::error::LibscfError;
 use crate::error::RefreshError;
+use crate::error::ScfEntity;
 use crate::error::ScfError;
 use crate::error::ScopeError;
 use crate::value::ScfValue;
@@ -81,8 +83,8 @@ impl<'a> Scf<'a> {
     ) -> Result<Self, ScfError> {
         let handle =
             unsafe { libscf_sys::scf_handle_create(libscf_sys::SCF_VERSION) };
-        let handle =
-            LibscfError::from_ptr(handle).map_err(ScfError::HandleCreate)?;
+        let handle = LibscfError::from_ptr(handle)
+            .map_err(|err| HandleCreateError { entity: ScfEntity::Scf, err })?;
 
         // Create the Scf object immediately so we clean up on drop on any error
         // below. We don't bind it until the end, though.
@@ -106,12 +108,7 @@ impl<'a> Scf<'a> {
             }
 
             ConnectMode::Zone(zonename) => {
-                let mut value = ScfValue::new(&scf).map_err(|err| {
-                    ScfError::CreateZoneName {
-                        zonename: Box::from(zonename),
-                        err,
-                    }
-                })?;
+                let mut value = ScfValue::new(&scf)?;
                 value.set(ValueRef::AString(zonename)).map_err(|err| {
                     ScfError::SetZoneName { zonename: Box::from(zonename), err }
                 })?;
@@ -131,12 +128,7 @@ impl<'a> Scf<'a> {
 
             #[cfg(any(test, feature = "testing"))]
             ConnectMode::DoorPath(door_path) => {
-                let mut value = ScfValue::new(&scf).map_err(|err| {
-                    ScfError::CreateDoorPath {
-                        door_path: Box::from(door_path),
-                        err,
-                    }
-                })?;
+                let mut value = ScfValue::new(&scf)?;
                 value.set(ValueRef::AString(door_path)).map_err(|err| {
                     ScfError::SetDoorPath {
                         door_path: Box::from(door_path),

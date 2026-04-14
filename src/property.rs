@@ -41,17 +41,7 @@ impl<'a, St> Property<'a, St> {
 
         let fmri = property_group.property_fmri(&name);
 
-        let mut handle =
-            property_group.scf().scf_property_create().map_err(|err| {
-                LookupError::HandleCreate {
-                    entity: ScfEntity::Property,
-                    target: format_lookup_target(
-                        &fmri,
-                        property_group.snapshot(),
-                    ),
-                    err,
-                }
-            })?;
+        let mut handle = property_group.scf().scf_property_create()?;
 
         let result = unsafe {
             property_group
@@ -82,13 +72,7 @@ impl<'a, St> Property<'a, St> {
     }
 
     pub fn values(&self) -> Result<Values<'_, St>, IterError> {
-        let iter = ScfUninitializedIter::new(self.scf()).map_err(|err| {
-            IterError::CreateIter {
-                entity: ScfEntity::Value,
-                parent: self.error_path(),
-                err,
-            }
-        })?;
+        let iter = ScfUninitializedIter::new(self.scf())?;
         let iter = unsafe { iter.init_property_values(self.handle.as_ptr()) }
             .map_err(|err| IterError::InitIter {
             entity: ScfEntity::Value,
