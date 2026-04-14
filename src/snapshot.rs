@@ -16,6 +16,7 @@ use crate::error::LookupError;
 use crate::error::format_lookup_target;
 use crate::iter::ScfIter;
 use crate::scf::ScfObject;
+use crate::utf8cstring::PropertyGroupFmri;
 use crate::utf8cstring::Utf8CString;
 
 #[derive(Debug)]
@@ -33,10 +34,7 @@ impl<'a> Snapshot<'a> {
         let name = Utf8CString::from_str(name).map_err(|err| {
             LookupError::InvalidName {
                 entity: LookupEntity::Snapshot,
-                target: format_lookup_target(
-                    name,
-                    Some(&instance.error_path()),
-                ),
+                name: name.to_string().into_boxed_str(),
                 err,
             }
         })?;
@@ -46,8 +44,8 @@ impl<'a> Snapshot<'a> {
                 LookupError::HandleCreate {
                     entity: LookupEntity::Snapshot,
                     target: format_lookup_target(
-                        name.as_str(),
-                        Some(&instance.error_path()),
+                        instance.fmri_internal(),
+                        None,
                     ),
                     err,
                 }
@@ -58,14 +56,18 @@ impl<'a> Snapshot<'a> {
                 .scf_get_snapshot(name.as_c_str().as_ptr(), handle.as_mut_ptr())
         };
 
+        // Construct the snapshot so we can either return it (on success) or
+        // pass it to `format_lookup_target()` (on failure).
+        let snap = Self { instance, name, handle };
+
         match result {
-            Ok(()) => Ok(Some(Self { instance, name, handle })),
+            Ok(()) => Ok(Some(snap)),
             Err(LibscfError::NotFound) => Ok(None),
             Err(err) => Err(LookupError::Get {
                 entity: LookupEntity::Snapshot,
                 target: format_lookup_target(
-                    name.as_str(),
-                    Some(&instance.error_path()),
+                    instance.fmri_internal(),
+                    Some(&snap),
                 ),
                 err,
             }),
@@ -84,6 +86,17 @@ impl<'a> Snapshot<'a> {
         unsafe {
             self.instance.scf_get_pg_composed(self.handle.as_ptr(), name, pg)
         }
+    }
+
+    pub fn instance_fmri(&self) -> &str {
+        self.instance.fmri()
+    }
+
+    pub(crate) fn property_group_fmri(
+        &self,
+        name: &Utf8CString,
+    ) -> PropertyGroupFmri {
+        self.instance.property_group_fmri(name)
     }
 
     pub fn name(&self) -> &str {
@@ -113,9 +126,8 @@ impl HasPropertyGroups for Snapshot<'_> {
 
 impl ErrorPath for Snapshot<'_> {
     fn error_path(&self) -> String {
-        // There is no syntax for including a snapshot in an FMRI; we diverge
-        // from that here to keep a pretty-short string for errors.
-        format!("{}@{}", self.instance.error_path(), self.name())
+        // There is no syntax for including a snapshot in an FMRI.
+        format!("{} ({} snapshot)", self.instance_fmri(), self.name())
     }
 }
 

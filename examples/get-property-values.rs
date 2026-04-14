@@ -26,7 +26,7 @@ struct Args {
 fn print_property_values<St>(prop: &Property<'_, St>) -> anyhow::Result<()> {
     for value in prop.values()? {
         let value = value?;
-        println!("{} {}", prop.name(), value.display_smf());
+        println!("{} {}", prop.fmri(), value.display_smf());
     }
     Ok(())
 }
@@ -52,10 +52,7 @@ fn run(
 
         if let Some(property) = property {
             let Some(prop) = pg.property(&property)? else {
-                bail!(
-                    "property `{property}` not found in `{name}/:properties/{}`",
-                    pg.name(),
-                );
+                bail!("property `{property}` not found in `{}`", pg.fmri());
             };
             print_property_values(&prop)?;
         } else {
@@ -64,7 +61,7 @@ fn run(
     } else {
         for pg in target.property_groups()? {
             let pg = pg?;
-            println!("-- property group {} --", pg.name());
+            println!("-- {} --", pg.fmri());
             print_properties(&pg)?;
         }
     }
@@ -84,28 +81,22 @@ fn main() -> anyhow::Result<()> {
 
     if let Some(inst_name) = &instance {
         let Some(inst) = service.instance(inst_name)? else {
-            bail!(
-                "instance `{inst_name}` not found in service `{}`",
-                service.name(),
-            );
+            bail!("instance `{inst_name}` not found in `{}`", service.fmri());
         };
         if let Some(snap_name) = &snapshot {
             let Some(snap) = inst.snapshot(snap_name)? else {
                 bail!(
-                    "snapshot `{snap_name}` not found in instance {}:{}",
-                    service.name(),
-                    inst.name(),
+                    "snapshot `{snap_name}` not found in instance {}",
+                    inst.fmri(),
                 );
             };
-            let name =
-                format!("{}:{}@{}", service.name(), inst.name(), snap.name());
+            let name = format!("{} ({} snapshot)", inst.fmri(), snap.name());
             run(&snap, &name, property_group, property)?;
         } else {
-            let name = format!("{}:{}", service.name(), inst.name());
-            run(&inst, &name, property_group, property)?;
+            run(&inst, inst.fmri(), property_group, property)?;
         }
     } else {
-        run(&service, service.name(), property_group, property)?;
+        run(&service, service.fmri(), property_group, property)?;
     }
 
     Ok(())

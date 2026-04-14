@@ -17,11 +17,12 @@ use crate::error::format_lookup_target;
 use crate::iter::ScfIter;
 use crate::iter::ScfUninitializedIter;
 use crate::scf::ScfObject;
+use crate::utf8cstring::PropertyFmri;
 use crate::utf8cstring::Utf8CString;
 
 pub struct Property<'a, St> {
     property_group: &'a PropertyGroup<'a, St>,
-    name: Utf8CString,
+    fmri: PropertyFmri,
     handle: ScfObject<'a, libscf_sys::scf_property_t>,
 }
 
@@ -33,21 +34,20 @@ impl<'a, St> Property<'a, St> {
         let name = Utf8CString::from_str(name).map_err(|err| {
             LookupError::InvalidName {
                 entity: LookupEntity::Property,
-                target: format_lookup_target(
-                    name,
-                    Some(&property_group.error_path()),
-                ),
+                name: name.to_string().into_boxed_str(),
                 err,
             }
         })?;
+
+        let fmri = property_group.property_fmri(&name);
 
         let mut handle =
             property_group.scf().scf_property_create().map_err(|err| {
                 LookupError::HandleCreate {
                     entity: LookupEntity::Property,
                     target: format_lookup_target(
-                        name.as_str(),
-                        Some(&property_group.error_path()),
+                        &fmri,
+                        property_group.snapshot(),
                     ),
                     err,
                 }
@@ -59,14 +59,11 @@ impl<'a, St> Property<'a, St> {
         };
 
         match result {
-            Ok(()) => Ok(Some(Self { property_group, name, handle })),
+            Ok(()) => Ok(Some(Self { property_group, fmri, handle })),
             Err(LibscfError::NotFound) => Ok(None),
             Err(err) => Err(LookupError::Get {
                 entity: LookupEntity::Property,
-                target: format_lookup_target(
-                    name.as_str(),
-                    Some(&property_group.error_path()),
-                ),
+                target: format_lookup_target(&fmri, property_group.snapshot()),
                 err,
             }),
         }
@@ -76,8 +73,8 @@ impl<'a, St> Property<'a, St> {
         self.property_group.scf()
     }
 
-    pub fn name(&self) -> &str {
-        self.name.as_str()
+    pub fn fmri(&self) -> &str {
+        self.fmri.as_str()
     }
 
     pub fn values(&self) -> Result<Values<'_, St>, IterError> {
@@ -100,9 +97,10 @@ impl<'a, St> Property<'a, St> {
     pub fn single_value(&self) -> Result<Value, SingleValueError> {
         let mut iter = self.values()?;
 
-        let first_val = iter.next().ok_or_else(|| {
-            SingleValueError::NoValues { description: self.error_path().into_boxed_str() }
-        })??;
+        let first_val =
+            iter.next().ok_or_else(|| SingleValueError::NoValues {
+                description: self.error_path().into_boxed_str(),
+            })??;
 
         match iter.next() {
             None => Ok(first_val),
@@ -116,7 +114,11 @@ impl<'a, St> Property<'a, St> {
 
 impl<St> ErrorPath for Property<'_, St> {
     fn error_path(&self) -> String {
-        format!("{}/{}", self.property_group.error_path(), self.name())
+        if let Some(snapshot) = self.property_group.snapshot() {
+            format!("{} ({} snapshot)", self.fmri(), snapshot.name())
+        } else {
+            self.fmri().to_string()
+        }
     }
 }
 
@@ -145,7 +147,7 @@ impl<'a, St> Iterator for Properties<'a, St> {
             .map(|result| {
                 result.map(|(name, handle)| Property {
                     property_group: self.property_group,
-                    name,
+                    fmri: self.property_group.property_fmri(&name),
                     handle,
                 })
             })

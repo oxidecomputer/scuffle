@@ -100,10 +100,10 @@ fn main() -> anyhow::Result<()> {
         let Some(mut inst) = service.instance(inst_name)? else {
             bail!(
                 "instance `{inst_name}` not found in service `{}`",
-                service.name(),
+                service.fmri(),
             );
         };
-        let name = format!("{}:{}", service.name(), inst.name());
+        let name = inst.fmri().to_string();
         run(
             &mut inst,
             &name,
@@ -113,7 +113,7 @@ fn main() -> anyhow::Result<()> {
             &value,
         )?;
     } else {
-        let name = service.name().to_string();
+        let name = service.fmri().to_string();
         run(
             &mut service,
             &name,

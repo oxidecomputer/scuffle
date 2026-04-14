@@ -2,7 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use crate::Snapshot;
 use crate::ValueKind;
+use crate::utf8cstring::Fmri;
 use chrono::DateTime;
 use chrono::Utc;
 use num_traits::FromPrimitive;
@@ -51,10 +53,10 @@ impl fmt::Display for LookupEntity {
 
 #[derive(Debug, thiserror::Error)]
 pub enum LookupError {
-    #[error("invalid {entity} name {target}")]
+    #[error("invalid {entity} name {name}")]
     InvalidName {
         entity: LookupEntity,
-        target: Box<str>,
+        name: Box<str>,
         #[source]
         err: NulError,
     },
@@ -76,13 +78,13 @@ pub enum LookupError {
     },
 }
 
-pub(crate) fn format_lookup_target(
-    name: &str,
-    parent: Option<&str>,
+pub(crate) fn format_lookup_target<T: Fmri>(
+    fmri: &T,
+    snapshot: Option<&Snapshot<'_>>,
 ) -> Box<str> {
-    match parent {
-        Some(p) => format!("`{name}` within `{p}`"),
-        None => format!("`{name}`"),
+    match snapshot {
+        Some(snap) => format!("`{fmri}` ({} snapshot)", snap.name()),
+        None => format!("`{fmri}`"),
     }
     .into_boxed_str()
 }

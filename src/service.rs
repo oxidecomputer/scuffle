@@ -23,6 +23,9 @@ use crate::error::LookupError;
 use crate::error::format_lookup_target;
 use crate::iter::ScfUninitializedIter;
 use crate::scf::ScfObject;
+use crate::utf8cstring::InstanceFmri;
+use crate::utf8cstring::PropertyGroupFmri;
+use crate::utf8cstring::ServiceFmri;
 use crate::utf8cstring::Utf8CString;
 use std::marker::PhantomData;
 
@@ -30,7 +33,7 @@ use std::marker::PhantomData;
 pub struct Service<'a> {
     // Lifetime that binds us to the parent `Scope`, ensuring we outlive it.
     _scope: PhantomData<&'a ()>,
-    name: Utf8CString,
+    fmri: ServiceFmri,
     handle: ScfObject<'a, libscf_sys::scf_service_t>,
 }
 
@@ -42,15 +45,17 @@ impl<'a> Service<'a> {
         let name = Utf8CString::from_str(name).map_err(|err| {
             LookupError::InvalidName {
                 entity: LookupEntity::Service,
-                target: format_lookup_target(name, None),
+                name: name.to_string().into_boxed_str(),
                 err,
             }
         })?;
 
+        let fmri = ServiceFmri::new(&name);
+
         let mut handle = scope.scf().scf_service_create().map_err(|err| {
             LookupError::HandleCreate {
                 entity: LookupEntity::Service,
-                target: format_lookup_target(name.as_str(), None),
+                target: format_lookup_target(&fmri, None),
                 err,
             }
         })?;
@@ -60,11 +65,11 @@ impl<'a> Service<'a> {
         };
 
         match result {
-            Ok(()) => Ok(Some(Self { _scope: PhantomData, handle, name })),
+            Ok(()) => Ok(Some(Self { _scope: PhantomData, handle, fmri })),
             Err(LibscfError::NotFound) => Ok(None),
             Err(err) => Err(LookupError::Get {
                 entity: LookupEntity::Service,
-                target: format_lookup_target(name.as_str(), None),
+                target: format_lookup_target(&fmri, None),
                 err,
             }),
         }
@@ -98,8 +103,8 @@ impl<'a> Service<'a> {
         })
     }
 
-    pub fn name(&self) -> &str {
-        self.name.as_str()
+    pub fn fmri(&self) -> &str {
+        self.fmri.as_str()
     }
 
     pub fn instance(
@@ -107,6 +112,17 @@ impl<'a> Service<'a> {
         name: &str,
     ) -> Result<Option<Instance<'_>>, LookupError> {
         Instance::new(self, name)
+    }
+
+    pub(crate) fn instance_fmri(&self, name: &Utf8CString) -> InstanceFmri {
+        self.fmri.append_instance(name)
+    }
+
+    pub(crate) fn property_group_fmri(
+        &self,
+        name: &Utf8CString,
+    ) -> PropertyGroupFmri {
+        self.fmri.append_pg(name)
     }
 
     pub fn instances(&self) -> Result<Instances<'_>, IterError> {
@@ -195,6 +211,6 @@ impl HasPropertyGroups for Service<'_> {
 
 impl ErrorPath for Service<'_> {
     fn error_path(&self) -> String {
-        self.name().to_string()
+        self.fmri().to_string()
     }
 }

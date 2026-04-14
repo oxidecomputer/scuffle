@@ -21,6 +21,8 @@ use crate::error::format_lookup_target;
 use crate::iter::ScfIter;
 use crate::iter::ScfUninitializedIter;
 use crate::scf::ScfObject;
+use crate::utf8cstring::PropertyFmri;
+use crate::utf8cstring::PropertyGroupFmri;
 use crate::utf8cstring::Utf8CString;
 use std::marker::PhantomData;
 
@@ -32,7 +34,7 @@ pub enum PropertyGroupSnapshot {}
 #[derive(Debug)]
 pub struct PropertyGroup<'a, St> {
     parent: PropertyGroupParent<'a>,
-    name: Utf8CString,
+    fmri: PropertyGroupFmri,
     handle: ScfObject<'a, libscf_sys::scf_propertygroup_t>,
     _state: PhantomData<fn() -> St>,
 }
@@ -46,21 +48,17 @@ impl<'a, St> PropertyGroup<'a, St> {
         let name = Utf8CString::from_str(name).map_err(|err| {
             LookupError::InvalidName {
                 entity: LookupEntity::PropertyGroup,
-                target: format_lookup_target(
-                    name,
-                    Some(&parent.error_path()),
-                ),
+                name: name.to_string().into_boxed_str(),
                 err,
             }
         })?;
 
+        let fmri = parent.property_group_fmri(&name);
+
         let mut handle = parent.scf().scf_pg_create().map_err(|err| {
             LookupError::HandleCreate {
                 entity: LookupEntity::PropertyGroup,
-                target: format_lookup_target(
-                    name.as_str(),
-                    Some(&parent.error_path()),
-                ),
+                target: format_lookup_target(&fmri, parent.snapshot()),
                 err,
             }
         })?;
@@ -71,15 +69,12 @@ impl<'a, St> PropertyGroup<'a, St> {
 
         match result {
             Ok(()) => {
-                Ok(Some(Self { parent, name, handle, _state: PhantomData }))
+                Ok(Some(Self { parent, fmri, handle, _state: PhantomData }))
             }
             Err(LibscfError::NotFound) => Ok(None),
             Err(err) => Err(LookupError::Get {
                 entity: LookupEntity::PropertyGroup,
-                target: format_lookup_target(
-                    name.as_str(),
-                    Some(&parent.error_path()),
-                ),
+                target: format_lookup_target(&fmri, parent.snapshot()),
                 err,
             }),
         }
@@ -87,6 +82,10 @@ impl<'a, St> PropertyGroup<'a, St> {
 
     pub(crate) fn scf(&self) -> &'a Scf<'a> {
         self.handle.scf()
+    }
+
+    pub(crate) fn snapshot(&self) -> Option<&'a Snapshot<'a>> {
+        self.parent.snapshot()
     }
 
     pub(crate) unsafe fn scf_get_property(
@@ -103,8 +102,12 @@ impl<'a, St> PropertyGroup<'a, St> {
         })
     }
 
-    pub fn name(&self) -> &str {
-        self.name.as_str()
+    pub fn fmri(&self) -> &str {
+        self.fmri.as_str()
+    }
+
+    pub(crate) fn property_fmri(&self, name: &Utf8CString) -> PropertyFmri {
+        self.fmri.append_property(name)
     }
 
     pub fn property(
@@ -136,7 +139,11 @@ impl<'a, St> PropertyGroup<'a, St> {
 
 impl<St> ErrorPath for PropertyGroup<'_, St> {
     fn error_path(&self) -> String {
-        format!("{}/:properties/{}", self.parent.error_path(), self.name())
+        if let Some(snapshot) = self.snapshot() {
+            format!("{} ({} snapshot)", self.fmri(), snapshot.name())
+        } else {
+            self.fmri().to_string()
+        }
     }
 }
 
@@ -156,7 +163,7 @@ impl<'a> PropertyGroup<'a, PropertyGroupEditable> {
     ) -> Self {
         Self {
             parent: PropertyGroupParent::Service(service),
-            name,
+            fmri: service.property_group_fmri(&name),
             handle,
             _state: PhantomData,
         }
@@ -176,7 +183,7 @@ impl<'a> PropertyGroup<'a, PropertyGroupEditable> {
     ) -> Self {
         Self {
             parent: PropertyGroupParent::Instance(instance),
-            name,
+            fmri: instance.property_group_fmri(&name),
             handle,
             _state: PhantomData,
         }
@@ -221,6 +228,28 @@ impl<'a> PropertyGroupParent<'a> {
             Self::Service(service) => service.scf(),
             Self::Instance(instance) => instance.scf(),
             Self::Snapshot(snapshot) => snapshot.scf(),
+        }
+    }
+
+    fn property_group_fmri(&self, name: &Utf8CString) -> PropertyGroupFmri {
+        match self {
+            PropertyGroupParent::Service(service) => {
+                service.property_group_fmri(name)
+            }
+            PropertyGroupParent::Instance(instance) => {
+                instance.property_group_fmri(name)
+            }
+            PropertyGroupParent::Snapshot(snapshot) => {
+                snapshot.property_group_fmri(name)
+            }
+        }
+    }
+
+    fn snapshot(&self) -> Option<&'a Snapshot<'a>> {
+        match self {
+            PropertyGroupParent::Service(_)
+            | PropertyGroupParent::Instance(_) => None,
+            PropertyGroupParent::Snapshot(snapshot) => Some(snapshot),
         }
     }
 
@@ -303,7 +332,7 @@ impl<'a, St> Iterator for PropertyGroups<'a, St> {
             .map(|result| {
                 result.map(|(name, handle)| PropertyGroup {
                     parent: self.parent,
-                    name,
+                    fmri: self.parent.property_group_fmri(&name),
                     handle,
                     _state: PhantomData,
                 })

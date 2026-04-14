@@ -237,7 +237,9 @@ impl RefreshMechanism<'_> {
                 let ret =
                     unsafe { libscf_sys::smf_refresh_instance(fmri.as_ptr()) };
                 LibscfError::from_ret(ret).map_err(|err| RefreshError::Failed {
-                    fmri: String::from_utf8_lossy(fmri.to_bytes()).into_owned().into_boxed_str(),
+                    fmri: String::from_utf8_lossy(fmri.to_bytes())
+                        .into_owned()
+                        .into_boxed_str(),
                     err,
                 })
             }
