@@ -22,6 +22,7 @@ use crate::utf8cstring::Utf8CString;
 
 pub struct Property<'a, St> {
     property_group: &'a PropertyGroup<'a, St>,
+    name: Utf8CString,
     fmri: PropertyFmri,
     handle: ScfObject<'a, libscf_sys::scf_property_t>,
 }
@@ -59,7 +60,7 @@ impl<'a, St> Property<'a, St> {
         };
 
         match result {
-            Ok(()) => Ok(Some(Self { property_group, fmri, handle })),
+            Ok(()) => Ok(Some(Self { property_group, name, fmri, handle })),
             Err(LibscfError::NotFound) => Ok(None),
             Err(err) => Err(LookupError::Get {
                 entity: LookupEntity::Property,
@@ -71,6 +72,10 @@ impl<'a, St> Property<'a, St> {
 
     pub(crate) fn scf(&self) -> &'a Scf<'a> {
         self.property_group.scf()
+    }
+
+    pub fn name(&self) -> &str {
+        self.name.as_str()
     }
 
     pub fn fmri(&self) -> &str {
@@ -148,6 +153,7 @@ impl<'a, St> Iterator for Properties<'a, St> {
                 result.map(|(name, handle)| Property {
                     property_group: self.property_group,
                     fmri: self.property_group.property_fmri(&name),
+                    name,
                     handle,
                 })
             })

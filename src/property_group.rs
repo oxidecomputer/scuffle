@@ -34,6 +34,7 @@ pub enum PropertyGroupSnapshot {}
 #[derive(Debug)]
 pub struct PropertyGroup<'a, St> {
     parent: PropertyGroupParent<'a>,
+    name: Utf8CString,
     fmri: PropertyGroupFmri,
     handle: ScfObject<'a, libscf_sys::scf_propertygroup_t>,
     _state: PhantomData<fn() -> St>,
@@ -68,9 +69,13 @@ impl<'a, St> PropertyGroup<'a, St> {
         };
 
         match result {
-            Ok(()) => {
-                Ok(Some(Self { parent, fmri, handle, _state: PhantomData }))
-            }
+            Ok(()) => Ok(Some(Self {
+                parent,
+                name,
+                fmri,
+                handle,
+                _state: PhantomData,
+            })),
             Err(LibscfError::NotFound) => Ok(None),
             Err(err) => Err(LookupError::Get {
                 entity: LookupEntity::PropertyGroup,
@@ -100,6 +105,10 @@ impl<'a, St> PropertyGroup<'a, St> {
                 property,
             )
         })
+    }
+
+    pub fn name(&self) -> &str {
+        self.name.as_str()
     }
 
     pub fn fmri(&self) -> &str {
@@ -165,6 +174,7 @@ impl<'a> PropertyGroup<'a, PropertyGroupEditable> {
         Self {
             parent: PropertyGroupParent::Service(service),
             fmri: service.property_group_fmri(&name),
+            name,
             handle,
             _state: PhantomData,
         }
@@ -185,6 +195,7 @@ impl<'a> PropertyGroup<'a, PropertyGroupEditable> {
         Self {
             parent: PropertyGroupParent::Instance(instance),
             fmri: instance.property_group_fmri(&name),
+            name,
             handle,
             _state: PhantomData,
         }
@@ -334,6 +345,7 @@ impl<'a, St> Iterator for PropertyGroups<'a, St> {
                 result.map(|(name, handle)| PropertyGroup {
                     parent: self.parent,
                     fmri: self.parent.property_group_fmri(&name),
+                    name,
                     handle,
                     _state: PhantomData,
                 })

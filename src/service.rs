@@ -33,6 +33,7 @@ use std::marker::PhantomData;
 pub struct Service<'a> {
     // Lifetime that binds us to the parent `Scope`, ensuring we outlive it.
     _scope: PhantomData<&'a ()>,
+    name: Utf8CString,
     fmri: ServiceFmri,
     handle: ScfObject<'a, libscf_sys::scf_service_t>,
 }
@@ -65,7 +66,9 @@ impl<'a> Service<'a> {
         };
 
         match result {
-            Ok(()) => Ok(Some(Self { _scope: PhantomData, handle, fmri })),
+            Ok(()) => {
+                Ok(Some(Self { _scope: PhantomData, name, handle, fmri }))
+            }
             Err(LibscfError::NotFound) => Ok(None),
             Err(err) => Err(LookupError::Get {
                 entity: LookupEntity::Service,
@@ -101,6 +104,10 @@ impl<'a> Service<'a> {
                 instance,
             )
         })
+    }
+
+    pub fn name(&self) -> &str {
+        self.name.as_str()
     }
 
     pub fn fmri(&self) -> &str {
