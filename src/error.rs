@@ -34,6 +34,7 @@ pub(crate) use sealed::ErrorPath;
 pub enum ScfEntity {
     Instance,
     Iter,
+    Name,
     Scf,
     Service,
     Snapshot,
@@ -50,6 +51,7 @@ impl fmt::Display for ScfEntity {
         let s = match self {
             Self::Instance => "instance",
             Self::Iter => "iterator",
+            Self::Name => "name",
             Self::Scf => "scf",
             Self::Service => "service",
             Self::Snapshot => "snapshot",
@@ -65,7 +67,7 @@ impl fmt::Display for ScfEntity {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("error creating {entity} handle")]
+#[error("failed to create {entity} handle")]
 pub struct HandleCreateError {
     pub entity: ScfEntity,
     #[source]
@@ -77,7 +79,7 @@ pub enum LookupError {
     #[error(transparent)]
     HandleCreate(#[from] HandleCreateError),
 
-    #[error("invalid {entity} name {name}")]
+    #[error("invalid {entity} name {name:?}")]
     InvalidName {
         entity: ScfEntity,
         name: Box<str>,
@@ -85,7 +87,7 @@ pub enum LookupError {
         err: NulError,
     },
 
-    #[error("error getting {entity} {target}")]
+    #[error("failed to get {entity} {target}")]
     Get {
         entity: ScfEntity,
         target: Box<str>,
@@ -107,16 +109,16 @@ pub(crate) fn format_lookup_target<T: Fmri>(
 
 #[derive(Debug, thiserror::Error)]
 pub enum IterErrorKind {
-    #[error("error initializing iterator")]
+    #[error("failed to initialize iterator")]
     Init(#[source] LibscfError),
 
-    #[error("error iterating")]
-    Iterating(#[source] LibscfError),
+    #[error("failed to get next item")]
+    GetNext(#[source] LibscfError),
 
-    #[error("error getting name")]
+    #[error("failed to get item name")]
     GetName(#[source] ScfStringError),
 
-    #[error("error converting value")]
+    #[error("failed to get item value")]
     GetValue(#[source] GetValueError),
 }
 
@@ -125,7 +127,7 @@ pub enum IterError {
     #[error(transparent)]
     HandleCreate(#[from] HandleCreateError),
 
-    #[error("{kind} for {entity} over `{parent}`")]
+    #[error("failed to iterate {entity} over `{parent}`")]
     Iter {
         entity: ScfEntity,
         parent: Box<str>,
@@ -246,14 +248,14 @@ impl LibscfError {
 #[derive(Debug, thiserror::Error)]
 pub enum ScfStringError {
     #[error(
-        "libscf returned {kind} of length {scf_len} \
+        "libscf returned {entity} of length {scf_len} \
          (expected at most {max_len})"
     )]
-    OutOfBounds { kind: &'static str, scf_len: usize, max_len: usize },
+    OutOfBounds { entity: ScfEntity, scf_len: usize, max_len: usize },
 
-    #[error("error getting {kind} as string")]
+    #[error("failed to get {entity} as string")]
     Get {
-        kind: &'static str,
+        entity: ScfEntity,
         #[source]
         err: LibscfError,
     },
@@ -270,7 +272,7 @@ pub enum ScopeError {
     #[error(transparent)]
     HandleCreate(#[from] HandleCreateError),
 
-    #[error("error getting local scope")]
+    #[error("failed to get local scope")]
     GetLocalScope(#[source] LibscfError),
 }
 
@@ -279,17 +281,17 @@ pub enum ScfError {
     #[error(transparent)]
     HandleCreate(#[from] HandleCreateError),
 
-    #[error("error binding scf handle")]
+    #[error("failed to bind scf handle")]
     HandleBind(#[source] LibscfError),
 
-    #[error("error setting zone name to {zonename} during connect")]
+    #[error("failed to set zone name to {zonename} during connect")]
     SetZoneName {
         zonename: Box<str>,
         #[source]
         err: SetValueError,
     },
 
-    #[error("error setting decoration to attach to zone {zonename}")]
+    #[error("failed to set decoration to attach to zone {zonename}")]
     SetDecorationZoneName {
         zonename: Box<str>,
         #[source]
@@ -297,7 +299,7 @@ pub enum ScfError {
     },
 
     #[cfg(any(test, feature = "testing"))]
-    #[error("error setting door path to {door_path} during connect")]
+    #[error("failed to set door path to {door_path} during connect")]
     SetDoorPath {
         door_path: Box<str>,
         #[source]
@@ -305,7 +307,7 @@ pub enum ScfError {
     },
 
     #[cfg(any(test, feature = "testing"))]
-    #[error("error setting decoration to connect to door {door_path}")]
+    #[error("failed to set decoration to connect to door {door_path}")]
     SetDecorationDoorPath {
         door_path: Box<str>,
         #[source]
@@ -367,28 +369,28 @@ pub enum GetValueError {
     #[error("value is invalid")]
     Invalid(#[source] LibscfError),
 
-    #[error("error getting value as boolean")]
+    #[error("failed to get value as boolean")]
     GetBool(#[source] LibscfError),
 
-    #[error("error getting value as count")]
+    #[error("failed to get value as count")]
     GetCount(#[source] LibscfError),
 
-    #[error("error getting value as integer")]
+    #[error("failed to get value as integer")]
     GetInteger(#[source] LibscfError),
 
-    #[error("error getting value as time")]
+    #[error("failed to get value as time")]
     GetTime(#[source] LibscfError),
 
     #[error("timestamp value from scf is invalid: {secs}.{nanos:09}")]
     InvalidTime { secs: i64, nanos: i32 },
 
-    #[error("error getting value as opaque")]
+    #[error("failed to get value as opaque")]
     GetOpaque(#[source] LibscfError),
 
-    #[error("error getting value as opaque: got out of bounds length {0}")]
+    #[error("failed to get value as opaque: got out of bounds length {0}")]
     GetOpaqueOutOfBounds(usize),
 
-    #[error("error getting value as string")]
+    #[error("failed to get value from libscf")]
     GetAsString(#[from] ScfStringError),
 
     #[error("invalid net address v4 value: {0}")]
@@ -409,7 +411,7 @@ pub enum SingleValueError {
     #[error("property `{description}` has more than one value")]
     MultipleValues { description: Box<str> },
 
-    #[error("error getting single value")]
+    #[error("failed to get single value")]
     IterError(#[from] IterError),
 }
 
@@ -443,7 +445,7 @@ pub enum AddPropertyGroupError {
     },
 
     #[error(
-        "error looking up existence of property group `{name}` on \
+        "failed to look up existence of property group `{name}` on \
          `{parent}`"
     )]
     ExistenceLookup {
@@ -472,17 +474,17 @@ pub enum TransactionOp {
 // Helper method for use in the error string of `TransactionPropertyError`
 fn format_transaction_op(op: &TransactionOp) -> &'static str {
     match op {
-        TransactionOp::Delete => "deleting",
-        TransactionOp::New => "creating new",
-        TransactionOp::Change => "changing",
-        TransactionOp::ChangeType => "changing type of",
-        TransactionOp::AddValue => "adding value to",
+        TransactionOp::Delete => "delete",
+        TransactionOp::New => "create new",
+        TransactionOp::Change => "change",
+        TransactionOp::ChangeType => "change type of",
+        TransactionOp::AddValue => "add value to",
     }
 }
 
 #[derive(Debug, thiserror::Error)]
 #[error(
-    "error {} property `{name}` in transaction on `{property_group}`",
+    "failed to {} property `{name}` in transaction on `{property_group}`",
     format_transaction_op(.op),
 )]
 pub struct TransactionPropertyError {
@@ -513,7 +515,7 @@ pub enum TransactionError {
     },
 
     #[error(
-        "error looking up existence of property `{name}` on \
+        "failed to look up existence of property `{name}` in transaction on \
          `{property_group}`"
     )]
     ExistenceLookup {
@@ -539,7 +541,7 @@ pub enum TransactionError {
     },
 
     #[error(
-        "error setting value for property `{name}` in transaction on \
+        "failed to set value for property `{name}` in transaction on \
          `{property_group}`"
     )]
     SetValue {

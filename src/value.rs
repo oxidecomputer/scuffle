@@ -368,7 +368,7 @@ impl ScfValue<'_> {
             ptr: *const libscf_sys::scf_value_t,
         ) -> Result<String, GetValueError> {
             with_scf_value_buf(|buf| {
-                scf_get_string("value", buf, |buf, buf_len| unsafe {
+                scf_get_string(ScfEntity::Value, buf, |buf, buf_len| unsafe {
                     libscf_sys::scf_value_get_as_string(ptr, buf, buf_len)
                 })
             })

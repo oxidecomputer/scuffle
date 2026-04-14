@@ -247,7 +247,7 @@ impl<'a, T: sealed::ScfIterable> ScfIter<'a, T> {
             _ => Some(Err(IterError::Iter {
                 entity: T::ENTITY,
                 parent: parent.error_path(),
-                kind: IterErrorKind::Iterating(LibscfError::last()),
+                kind: IterErrorKind::GetNext(LibscfError::last()),
             })),
         }
     }

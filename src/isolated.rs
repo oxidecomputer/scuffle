@@ -63,7 +63,7 @@ pub enum IsolatedConfigdRefreshError {
         #[source]
         err: io::Error,
     },
-    #[error("error during `svccfg -s {fmri} refresh`: {err}")]
+    #[error("`svccfg -s {fmri} refresh` failed: {err}")]
     SvccfgRefreshError { fmri: String, err: String },
 }
 
@@ -139,14 +139,14 @@ pub enum IsolatedConfigdBuildError {
     #[error("failed to create temp directory")]
     CreateTempDir(#[source] io::Error),
 
-    #[error("failed creating fake service manifest file `{path}`")]
+    #[error("failed to create fake service manifest file `{path}`")]
     FakeServiceManifestCreate {
         path: Utf8PathBuf,
         #[source]
         err: io::Error,
     },
 
-    #[error("failed writing to fake service manifest file `{path}`")]
+    #[error("failed to write to fake service manifest file `{path}`")]
     FakeServiceManifestWrite {
         path: Utf8PathBuf,
         #[source]
@@ -160,13 +160,13 @@ pub enum IsolatedConfigdBuildError {
         err: io::Error,
     },
 
-    #[error("error during `svccfg import {path}`: {err}")]
+    #[error("`svccfg import {path}` failed: {err}")]
     SvccfgImportError { path: Utf8PathBuf, err: String },
 
     #[error("failed to exec `svc.configd` pointed at the isolated repo")]
     SvcConfigdExec(#[source] io::Error),
 
-    #[error("failed creating svc.configd output file `{path}`")]
+    #[error("failed to create svc.configd output file `{path}`")]
     SvcConfigdCreateOutputFile {
         path: Utf8PathBuf,
         #[source]

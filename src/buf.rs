@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::error::LibscfError;
+use crate::error::ScfEntity;
 use crate::error::ScfStringError;
 use crate::limit;
 use crate::utf8cstring::Utf8CString;
@@ -13,11 +14,11 @@ pub(crate) fn scf_get_name<F>(f: F) -> Result<Utf8CString, ScfStringError>
 where
     F: FnOnce(*mut libc::c_char, usize) -> libc::ssize_t,
 {
-    with_scf_name_buf(move |buf| scf_get_string("name", buf, f))
+    with_scf_name_buf(move |buf| scf_get_string(ScfEntity::Name, buf, f))
 }
 
 pub(crate) fn scf_get_string<F>(
-    kind: &'static str,
+    entity: ScfEntity,
     buf: &mut [u8],
     f: F,
 ) -> Result<Utf8CString, ScfStringError>
@@ -28,7 +29,7 @@ where
         buf.as_mut_ptr().cast::<libc::c_char>(),
         buf.len(),
     ))
-    .map_err(|err| ScfStringError::Get { kind, err })?;
+    .map_err(|err| ScfStringError::Get { entity, err })?;
 
     // `libscf` always returns the length of the _internal_ string as `scf_len`,
     // not counting its nul terminator. If this fits in `buf`, then `scf_len +
@@ -36,7 +37,7 @@ where
     // too small.
     if scf_len + 1 > buf.len() {
         return Err(ScfStringError::OutOfBounds {
-            kind,
+            entity,
             scf_len,
             max_len: buf.len(),
         });
