@@ -15,15 +15,18 @@ use std::str::Utf8Error;
 #[cfg(any(test, feature = "testing"))]
 pub use crate::isolated::IsolatedConfigdRefreshError;
 
-pub(crate) trait ErrorPath {
-    /// String describing an entity in the SMF tree for the purposes of error
-    /// reporting.
-    ///
-    /// Most types implement this as something FMRI-like; e.g., a property
-    /// within a property group within a service would return
-    /// `{service_name}/:properties/{property_group_name}/{property_name}`.
-    fn error_path(&self) -> String;
+mod sealed {
+    pub trait ErrorPath {
+        /// String describing an entity in the SMF tree for the purposes of error
+        /// reporting.
+        ///
+        /// Most types implement this as something FMRI-like; e.g., a property
+        /// within a property group within a service would return
+        /// `{service_name}/:properties/{property_group_name}/{property_name}`.
+        fn error_path(&self) -> String;
+    }
 }
+pub(crate) use sealed::ErrorPath;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LookupEntity {
@@ -449,6 +452,57 @@ pub enum SingleValueError {
 
     #[error("error getting single value")]
     IterError(#[from] IterError),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum AddPropertyGroupError {
+    #[error("invalid property group name {name:?} in `{parent}`")]
+    InvalidName {
+        parent: String,
+        name: String,
+        #[source]
+        err: NulError,
+    },
+
+    #[error("invalid property group type {pg_type:?} in `{parent}`")]
+    InvalidType {
+        parent: String,
+        pg_type: String,
+        #[source]
+        err: NulError,
+    },
+
+    #[error("failed to create property group handle for `{parent}`")]
+    HandleCreate {
+        parent: String,
+        #[source]
+        err: LibscfError,
+    },
+
+    #[error("failed to add property group `{name}` to `{parent}`")]
+    Add {
+        parent: String,
+        name: String,
+        #[source]
+        err: LibscfError,
+    },
+
+    #[error(
+        "error looking up existence of property group `{name}` on \
+         `{parent}`"
+    )]
+    ExistenceLookup {
+        parent: String,
+        name: String,
+        #[source]
+        err: LookupError,
+    },
+
+    #[error(
+        "property group `{name}` on `{parent}` was deleted concurrently \
+         with ensure attempt"
+    )]
+    DeletedDuringEnsure { parent: String, name: String },
 }
 
 #[derive(Debug, thiserror::Error)]

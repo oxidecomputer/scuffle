@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+mod add_property_group;
 mod buf;
 mod has_property_groups;
 mod instance;
@@ -22,6 +23,8 @@ pub mod error;
 #[cfg(any(test, feature = "testing"))]
 pub mod isolated;
 
+pub use add_property_group::AddPropertyGroup;
+pub use add_property_group::AddPropertyGroupFlags;
 pub use has_property_groups::HasPropertyGroups;
 pub use instance::Instance;
 pub use instance::Instances;

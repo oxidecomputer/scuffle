@@ -31,6 +31,9 @@ test-strategy = "0.4.5"
 name = "get-property-values"
 
 [[example]]
+name = "set-property-values"
+
+[[example]]
 name = "run-isolated-configd"
 required-features = ["testing"]
 

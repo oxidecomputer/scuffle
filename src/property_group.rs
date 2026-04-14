@@ -142,11 +142,37 @@ impl<'a> PropertyGroup<'a, PropertyGroupEditable> {
         Self::from_parent(PropertyGroupParent::Service(service), name)
     }
 
+    pub(crate) fn from_service_add_pg(
+        service: &'a Service<'a>,
+        name: Utf8CString,
+        handle: ScfObject<'a, libscf_sys::scf_propertygroup_t>,
+    ) -> Self {
+        Self {
+            parent: PropertyGroupParent::Service(service),
+            name,
+            handle,
+            _state: PhantomData,
+        }
+    }
+
     pub(crate) fn from_instance(
         instance: &'a Instance<'a>,
         name: &str,
     ) -> Result<Option<Self>, LookupError> {
         Self::from_parent(PropertyGroupParent::Instance(instance), name)
+    }
+
+    pub(crate) fn from_instance_add_pg(
+        instance: &'a Instance<'a>,
+        name: Utf8CString,
+        handle: ScfObject<'a, libscf_sys::scf_propertygroup_t>,
+    ) -> Self {
+        Self {
+            parent: PropertyGroupParent::Instance(instance),
+            name,
+            handle,
+            _state: PhantomData,
+        }
     }
 
     pub(crate) unsafe fn scf_transaction_start(

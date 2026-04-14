@@ -2,6 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use crate::AddPropertyGroup;
+use crate::AddPropertyGroupFlags;
 use crate::HasPropertyGroups;
 use crate::PropertyGroup;
 use crate::PropertyGroupEditable;
@@ -10,6 +12,8 @@ use crate::Scf;
 use crate::Service;
 use crate::Snapshot;
 use crate::Snapshots;
+use crate::add_property_group::AddPropertyGroupArgs;
+use crate::error::AddPropertyGroupError;
 use crate::error::ErrorPath;
 use crate::error::IterEntity;
 use crate::error::IterError;
@@ -164,6 +168,41 @@ impl<'a> Instance<'a> {
                     err,
                 })?;
         Ok(Snapshots::new(self, iter))
+    }
+}
+
+impl AddPropertyGroup for Instance<'_> {
+    fn add_property_group(
+        &mut self,
+        name: &str,
+        pg_type: &str,
+        flags: AddPropertyGroupFlags,
+    ) -> Result<PropertyGroup<'_, PropertyGroupEditable>, AddPropertyGroupError>
+    {
+        let AddPropertyGroupArgs { name, pg_type, mut handle, flags } =
+            AddPropertyGroupArgs::validate(
+                self.scf(),
+                self,
+                name,
+                pg_type,
+                flags,
+            )?;
+        LibscfError::from_ret(unsafe {
+            libscf_sys::scf_instance_add_pg(
+                self.handle.as_mut_ptr(),
+                name.as_c_str().as_ptr(),
+                pg_type.as_c_str().as_ptr(),
+                flags,
+                handle.as_mut_ptr(),
+            )
+        })
+        .map_err(|err| AddPropertyGroupError::Add {
+            parent: self.error_path(),
+            name: name.to_string(),
+            err,
+        })?;
+
+        Ok(PropertyGroup::from_instance_add_pg(self, name, handle))
     }
 }
 
