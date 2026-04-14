@@ -15,11 +15,10 @@ use crate::Snapshots;
 use crate::add_property_group::AddPropertyGroupArgs;
 use crate::error::AddPropertyGroupError;
 use crate::error::ErrorPath;
-use crate::error::IterEntity;
 use crate::error::IterError;
 use crate::error::LibscfError;
-use crate::error::LookupEntity;
 use crate::error::LookupError;
+use crate::error::ScfEntity;
 use crate::error::format_lookup_target;
 use crate::iter::ScfIter;
 use crate::iter::ScfUninitializedIter;
@@ -43,7 +42,7 @@ impl<'a> Instance<'a> {
     ) -> Result<Option<Self>, LookupError> {
         let name = Utf8CString::from_str(name).map_err(|err| {
             LookupError::InvalidName {
-                entity: LookupEntity::Instance,
+                entity: ScfEntity::Instance,
                 name: name.to_string().into_boxed_str(),
                 err,
             }
@@ -54,7 +53,7 @@ impl<'a> Instance<'a> {
         let mut handle =
             service.scf().scf_instance_create().map_err(|err| {
                 LookupError::HandleCreate {
-                    entity: LookupEntity::Instance,
+                    entity: ScfEntity::Instance,
                     target: format_lookup_target(&fmri, None),
                     err,
                 }
@@ -69,7 +68,7 @@ impl<'a> Instance<'a> {
             Ok(()) => Ok(Some(Self { service, name, fmri, handle })),
             Err(LibscfError::NotFound) => Ok(None),
             Err(err) => Err(LookupError::Get {
-                entity: LookupEntity::Instance,
+                entity: ScfEntity::Instance,
                 target: format_lookup_target(&fmri, None),
                 err,
             }),
@@ -126,7 +125,7 @@ impl<'a> Instance<'a> {
     ) -> Result<ScfIter<'_, libscf_sys::scf_propertygroup_t>, IterError> {
         let iter = ScfUninitializedIter::new(self.scf()).map_err(|err| {
             IterError::CreateIter {
-                entity: IterEntity::PropertyGroup,
+                entity: ScfEntity::PropertyGroup,
                 parent: self.error_path(),
                 err,
             }
@@ -138,7 +137,7 @@ impl<'a> Instance<'a> {
             )
         }
         .map_err(|err| IterError::InitIter {
-            entity: IterEntity::PropertyGroup,
+            entity: ScfEntity::PropertyGroup,
             parent: self.error_path(),
             err,
         })
@@ -173,7 +172,7 @@ impl<'a> Instance<'a> {
     pub fn snapshots(&self) -> Result<Snapshots<'_>, IterError> {
         let iter = ScfUninitializedIter::new(self.scf()).map_err(|err| {
             IterError::CreateIter {
-                entity: IterEntity::Snapshot,
+                entity: ScfEntity::Snapshot,
                 parent: self.error_path(),
                 err,
             }
@@ -181,7 +180,7 @@ impl<'a> Instance<'a> {
         let iter =
             unsafe { iter.init_instance_snapshots(self.handle.as_ptr()) }
                 .map_err(|err| IterError::InitIter {
-                    entity: IterEntity::Snapshot,
+                    entity: ScfEntity::Snapshot,
                     parent: self.error_path(),
                     err,
                 })?;
@@ -239,7 +238,7 @@ impl HasPropertyGroups for Instance<'_> {
     ) -> Result<PropertyGroups<'_, Self::St>, IterError> {
         let iter = ScfUninitializedIter::new(self.scf()).map_err(|err| {
             IterError::CreateIter {
-                entity: IterEntity::PropertyGroup,
+                entity: ScfEntity::PropertyGroup,
                 parent: self.error_path(),
                 err,
             }
@@ -247,7 +246,7 @@ impl HasPropertyGroups for Instance<'_> {
         let iter =
             unsafe { iter.init_instance_property_groups(self.handle.as_ptr()) }
                 .map_err(|err| IterError::InitIter {
-                    entity: IterEntity::PropertyGroup,
+                    entity: ScfEntity::PropertyGroup,
                     parent: self.error_path(),
                     err,
                 })?;

@@ -7,11 +7,10 @@ use crate::Scf;
 use crate::Value;
 use crate::Values;
 use crate::error::ErrorPath;
-use crate::error::IterEntity;
 use crate::error::IterError;
 use crate::error::LibscfError;
-use crate::error::LookupEntity;
 use crate::error::LookupError;
+use crate::error::ScfEntity;
 use crate::error::SingleValueError;
 use crate::error::format_lookup_target;
 use crate::iter::ScfIter;
@@ -34,7 +33,7 @@ impl<'a, St> Property<'a, St> {
     ) -> Result<Option<Self>, LookupError> {
         let name = Utf8CString::from_str(name).map_err(|err| {
             LookupError::InvalidName {
-                entity: LookupEntity::Property,
+                entity: ScfEntity::Property,
                 name: name.to_string().into_boxed_str(),
                 err,
             }
@@ -45,7 +44,7 @@ impl<'a, St> Property<'a, St> {
         let mut handle =
             property_group.scf().scf_property_create().map_err(|err| {
                 LookupError::HandleCreate {
-                    entity: LookupEntity::Property,
+                    entity: ScfEntity::Property,
                     target: format_lookup_target(
                         &fmri,
                         property_group.snapshot(),
@@ -63,7 +62,7 @@ impl<'a, St> Property<'a, St> {
             Ok(()) => Ok(Some(Self { property_group, name, fmri, handle })),
             Err(LibscfError::NotFound) => Ok(None),
             Err(err) => Err(LookupError::Get {
-                entity: LookupEntity::Property,
+                entity: ScfEntity::Property,
                 target: format_lookup_target(&fmri, property_group.snapshot()),
                 err,
             }),
@@ -85,14 +84,14 @@ impl<'a, St> Property<'a, St> {
     pub fn values(&self) -> Result<Values<'_, St>, IterError> {
         let iter = ScfUninitializedIter::new(self.scf()).map_err(|err| {
             IterError::CreateIter {
-                entity: IterEntity::Value,
+                entity: ScfEntity::Value,
                 parent: self.error_path(),
                 err,
             }
         })?;
         let iter = unsafe { iter.init_property_values(self.handle.as_ptr()) }
             .map_err(|err| IterError::InitIter {
-            entity: IterEntity::Value,
+            entity: ScfEntity::Value,
             parent: self.error_path(),
             err,
         })?;

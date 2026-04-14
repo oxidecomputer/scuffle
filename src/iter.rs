@@ -5,16 +5,16 @@
 use crate::Scf;
 use crate::buf::scf_get_name;
 use crate::error::ErrorPath;
-use crate::error::IterEntity;
 use crate::error::IterError;
 use crate::error::LibscfError;
+use crate::error::ScfEntity;
 use crate::scf::ScfObject;
 use crate::utf8cstring::Utf8CString;
 use std::marker::PhantomData;
 
 mod sealed {
     pub(crate) trait ScfIterable: crate::scf::ScfObjectType {
-        const ENTITY: crate::error::IterEntity;
+        const ENTITY: crate::error::ScfEntity;
 
         unsafe fn try_next(
             iter: *mut libscf_sys::scf_iter_t,
@@ -32,7 +32,7 @@ mod sealed {
 }
 
 impl sealed::ScfIterable for libscf_sys::scf_value_t {
-    const ENTITY: IterEntity = IterEntity::Value;
+    const ENTITY: ScfEntity = ScfEntity::Value;
 
     unsafe fn try_next(
         iter: *mut libscf_sys::scf_iter_t,
@@ -43,7 +43,7 @@ impl sealed::ScfIterable for libscf_sys::scf_value_t {
 }
 
 impl sealed::ScfIterable for libscf_sys::scf_propertygroup_t {
-    const ENTITY: IterEntity = IterEntity::PropertyGroup;
+    const ENTITY: ScfEntity = ScfEntity::PropertyGroup;
 
     unsafe fn try_next(
         iter: *mut libscf_sys::scf_iter_t,
@@ -64,7 +64,7 @@ impl sealed::ScfNamedIterable for libscf_sys::scf_propertygroup_t {
 }
 
 impl sealed::ScfIterable for libscf_sys::scf_property_t {
-    const ENTITY: IterEntity = IterEntity::Property;
+    const ENTITY: ScfEntity = ScfEntity::Property;
 
     unsafe fn try_next(
         iter: *mut libscf_sys::scf_iter_t,
@@ -85,7 +85,7 @@ impl sealed::ScfNamedIterable for libscf_sys::scf_property_t {
 }
 
 impl sealed::ScfIterable for libscf_sys::scf_instance_t {
-    const ENTITY: IterEntity = IterEntity::Instance;
+    const ENTITY: ScfEntity = ScfEntity::Instance;
 
     unsafe fn try_next(
         iter: *mut libscf_sys::scf_iter_t,
@@ -106,7 +106,7 @@ impl sealed::ScfNamedIterable for libscf_sys::scf_instance_t {
 }
 
 impl sealed::ScfIterable for libscf_sys::scf_snapshot_t {
-    const ENTITY: IterEntity = IterEntity::Snapshot;
+    const ENTITY: ScfEntity = ScfEntity::Snapshot;
 
     unsafe fn try_next(
         iter: *mut libscf_sys::scf_iter_t,

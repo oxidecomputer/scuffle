@@ -31,23 +31,26 @@ mod sealed {
 pub(crate) use sealed::ErrorPath;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LookupEntity {
+pub enum ScfEntity {
     Instance,
     Service,
     Snapshot,
     PropertyGroup,
     Property,
+    Value,
 }
 
-impl fmt::Display for LookupEntity {
+impl fmt::Display for ScfEntity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Instance => f.write_str("instance"),
-            Self::Service => f.write_str("service"),
-            Self::Snapshot => f.write_str("snapshot"),
-            Self::PropertyGroup => f.write_str("property group"),
-            Self::Property => f.write_str("property"),
-        }
+        let s = match self {
+            Self::Instance => "instance",
+            Self::Service => "service",
+            Self::Snapshot => "snapshot",
+            Self::PropertyGroup => "property group",
+            Self::Property => "property",
+            Self::Value => "value",
+        };
+        s.fmt(f)
     }
 }
 
@@ -55,7 +58,7 @@ impl fmt::Display for LookupEntity {
 pub enum LookupError {
     #[error("invalid {entity} name {name}")]
     InvalidName {
-        entity: LookupEntity,
+        entity: ScfEntity,
         name: Box<str>,
         #[source]
         err: NulError,
@@ -63,7 +66,7 @@ pub enum LookupError {
 
     #[error("error creating handle for {entity} {target}")]
     HandleCreate {
-        entity: LookupEntity,
+        entity: ScfEntity,
         target: Box<str>,
         #[source]
         err: LibscfError,
@@ -71,7 +74,7 @@ pub enum LookupError {
 
     #[error("error getting {entity} {target}")]
     Get {
-        entity: LookupEntity,
+        entity: ScfEntity,
         target: Box<str>,
         #[source]
         err: LibscfError,
@@ -89,32 +92,11 @@ pub(crate) fn format_lookup_target<T: Fmri>(
     .into_boxed_str()
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IterEntity {
-    Instance,
-    PropertyGroup,
-    Property,
-    Snapshot,
-    Value,
-}
-
-impl fmt::Display for IterEntity {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Instance => f.write_str("instance"),
-            Self::PropertyGroup => f.write_str("property group"),
-            Self::Property => f.write_str("property"),
-            Self::Snapshot => f.write_str("snapshot"),
-            Self::Value => f.write_str("value"),
-        }
-    }
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum IterError {
     #[error("error creating {entity} iterator over `{parent}`")]
     CreateIter {
-        entity: IterEntity,
+        entity: ScfEntity,
         parent: Box<str>,
         #[source]
         err: LibscfError,
@@ -122,7 +104,7 @@ pub enum IterError {
 
     #[error("error initializing {entity} iterator over `{parent}`")]
     InitIter {
-        entity: IterEntity,
+        entity: ScfEntity,
         parent: Box<str>,
         #[source]
         err: LibscfError,
@@ -130,7 +112,7 @@ pub enum IterError {
 
     #[error("error creating {entity} while iterating over `{parent}`")]
     CreateItem {
-        entity: IterEntity,
+        entity: ScfEntity,
         parent: Box<str>,
         #[source]
         err: LibscfError,
@@ -138,7 +120,7 @@ pub enum IterError {
 
     #[error("error iterating {entity} of `{parent}`")]
     Iterating {
-        entity: IterEntity,
+        entity: ScfEntity,
         parent: Box<str>,
         #[source]
         err: LibscfError,
@@ -146,7 +128,7 @@ pub enum IterError {
 
     #[error("error getting name of {entity} while iterating over `{parent}`")]
     GetName {
-        entity: IterEntity,
+        entity: ScfEntity,
         parent: Box<str>,
         #[source]
         err: ScfStringError,
@@ -154,7 +136,7 @@ pub enum IterError {
 
     #[error("error converting {entity} value while iterating `{parent}`")]
     GetValue {
-        entity: IterEntity,
+        entity: ScfEntity,
         parent: Box<str>,
         #[source]
         err: GetValueError,

@@ -15,11 +15,10 @@ use crate::Scope;
 use crate::add_property_group::AddPropertyGroupArgs;
 use crate::error::AddPropertyGroupError;
 use crate::error::ErrorPath;
-use crate::error::IterEntity;
 use crate::error::IterError;
 use crate::error::LibscfError;
-use crate::error::LookupEntity;
 use crate::error::LookupError;
+use crate::error::ScfEntity;
 use crate::error::format_lookup_target;
 use crate::iter::ScfUninitializedIter;
 use crate::scf::ScfObject;
@@ -45,7 +44,7 @@ impl<'a> Service<'a> {
     ) -> Result<Option<Self>, LookupError> {
         let name = Utf8CString::from_str(name).map_err(|err| {
             LookupError::InvalidName {
-                entity: LookupEntity::Service,
+                entity: ScfEntity::Service,
                 name: name.to_string().into_boxed_str(),
                 err,
             }
@@ -55,7 +54,7 @@ impl<'a> Service<'a> {
 
         let mut handle = scope.scf().scf_service_create().map_err(|err| {
             LookupError::HandleCreate {
-                entity: LookupEntity::Service,
+                entity: ScfEntity::Service,
                 target: format_lookup_target(&fmri, None),
                 err,
             }
@@ -71,7 +70,7 @@ impl<'a> Service<'a> {
             }
             Err(LibscfError::NotFound) => Ok(None),
             Err(err) => Err(LookupError::Get {
-                entity: LookupEntity::Service,
+                entity: ScfEntity::Service,
                 target: format_lookup_target(&fmri, None),
                 err,
             }),
@@ -135,14 +134,14 @@ impl<'a> Service<'a> {
     pub fn instances(&self) -> Result<Instances<'_>, IterError> {
         let iter = ScfUninitializedIter::new(self.scf()).map_err(|err| {
             IterError::CreateIter {
-                entity: IterEntity::Instance,
+                entity: ScfEntity::Instance,
                 parent: self.error_path(),
                 err,
             }
         })?;
         let iter = unsafe { iter.init_service_instances(self.handle.as_ptr()) }
             .map_err(|err| IterError::InitIter {
-                entity: IterEntity::Instance,
+                entity: ScfEntity::Instance,
                 parent: self.error_path(),
                 err,
             })?;
@@ -200,7 +199,7 @@ impl HasPropertyGroups for Service<'_> {
     ) -> Result<PropertyGroups<'_, Self::St>, IterError> {
         let iter = ScfUninitializedIter::new(self.scf()).map_err(|err| {
             IterError::CreateIter {
-                entity: IterEntity::PropertyGroup,
+                entity: ScfEntity::PropertyGroup,
                 parent: self.error_path(),
                 err,
             }
@@ -208,7 +207,7 @@ impl HasPropertyGroups for Service<'_> {
         let iter =
             unsafe { iter.init_service_property_groups(self.handle.as_ptr()) }
                 .map_err(|err| IterError::InitIter {
-                    entity: IterEntity::PropertyGroup,
+                    entity: ScfEntity::PropertyGroup,
                     parent: self.error_path(),
                     err,
                 })?;

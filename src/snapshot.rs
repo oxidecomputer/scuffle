@@ -11,8 +11,8 @@ use crate::Scf;
 use crate::error::ErrorPath;
 use crate::error::IterError;
 use crate::error::LibscfError;
-use crate::error::LookupEntity;
 use crate::error::LookupError;
+use crate::error::ScfEntity;
 use crate::error::format_lookup_target;
 use crate::iter::ScfIter;
 use crate::scf::ScfObject;
@@ -33,7 +33,7 @@ impl<'a> Snapshot<'a> {
     ) -> Result<Option<Self>, LookupError> {
         let name = Utf8CString::from_str(name).map_err(|err| {
             LookupError::InvalidName {
-                entity: LookupEntity::Snapshot,
+                entity: ScfEntity::Snapshot,
                 name: name.to_string().into_boxed_str(),
                 err,
             }
@@ -42,7 +42,7 @@ impl<'a> Snapshot<'a> {
         let mut handle =
             instance.scf().scf_snapshot_create().map_err(|err| {
                 LookupError::HandleCreate {
-                    entity: LookupEntity::Snapshot,
+                    entity: ScfEntity::Snapshot,
                     target: format_lookup_target(
                         instance.fmri_internal(),
                         None,
@@ -64,7 +64,7 @@ impl<'a> Snapshot<'a> {
             Ok(()) => Ok(Some(snap)),
             Err(LibscfError::NotFound) => Ok(None),
             Err(err) => Err(LookupError::Get {
-                entity: LookupEntity::Snapshot,
+                entity: ScfEntity::Snapshot,
                 target: format_lookup_target(
                     instance.fmri_internal(),
                     Some(&snap),

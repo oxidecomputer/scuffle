@@ -8,9 +8,9 @@ use crate::buf::scf_get_string;
 use crate::buf::with_scf_value_buf;
 use crate::error::ErrorPath;
 use crate::error::GetValueError;
-use crate::error::IterEntity;
 use crate::error::IterError;
 use crate::error::LibscfError;
+use crate::error::ScfEntity;
 use crate::error::SetValueError;
 use crate::iter::ScfIter;
 use crate::scf::ScfObject;
@@ -648,7 +648,7 @@ impl<'a, St> Values<'a, St> {
     ) -> Result<Self, IterError> {
         let value = ScfValue::new(parent.scf()).map_err(|err| {
             IterError::CreateItem {
-                entity: IterEntity::Value,
+                entity: ScfEntity::Value,
                 parent: parent.error_path(),
                 err,
             }
@@ -672,7 +672,7 @@ impl<'a, St> Iterator for Values<'a, St> {
         match self.iter.next_with_handle(self.parent, &mut self.value.handle)? {
             Ok(()) => {
                 Some(self.value.get().map_err(|err| IterError::GetValue {
-                    entity: IterEntity::Value,
+                    entity: ScfEntity::Value,
                     parent: self.parent.error_path(),
                     err,
                 }))

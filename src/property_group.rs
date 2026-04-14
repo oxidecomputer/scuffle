@@ -11,11 +11,10 @@ use crate::Snapshot;
 use crate::Transaction;
 use crate::TransactionReset;
 use crate::error::ErrorPath;
-use crate::error::IterEntity;
 use crate::error::IterError;
 use crate::error::LibscfError;
-use crate::error::LookupEntity;
 use crate::error::LookupError;
+use crate::error::ScfEntity;
 use crate::error::TransactionError;
 use crate::error::format_lookup_target;
 use crate::iter::ScfIter;
@@ -48,7 +47,7 @@ impl<'a, St> PropertyGroup<'a, St> {
     ) -> Result<Option<Self>, LookupError> {
         let name = Utf8CString::from_str(name).map_err(|err| {
             LookupError::InvalidName {
-                entity: LookupEntity::PropertyGroup,
+                entity: ScfEntity::PropertyGroup,
                 name: name.to_string().into_boxed_str(),
                 err,
             }
@@ -58,7 +57,7 @@ impl<'a, St> PropertyGroup<'a, St> {
 
         let mut handle = parent.scf().scf_pg_create().map_err(|err| {
             LookupError::HandleCreate {
-                entity: LookupEntity::PropertyGroup,
+                entity: ScfEntity::PropertyGroup,
                 target: format_lookup_target(&fmri, parent.snapshot()),
                 err,
             }
@@ -78,7 +77,7 @@ impl<'a, St> PropertyGroup<'a, St> {
             })),
             Err(LibscfError::NotFound) => Ok(None),
             Err(err) => Err(LookupError::Get {
-                entity: LookupEntity::PropertyGroup,
+                entity: ScfEntity::PropertyGroup,
                 target: format_lookup_target(&fmri, parent.snapshot()),
                 err,
             }),
@@ -129,7 +128,7 @@ impl<'a, St> PropertyGroup<'a, St> {
     pub fn properties(&self) -> Result<Properties<'_, St>, IterError> {
         let iter = ScfUninitializedIter::new(self.scf()).map_err(|err| {
             IterError::CreateIter {
-                entity: IterEntity::Property,
+                entity: ScfEntity::Property,
                 parent: self.error_path(),
                 err,
             }
@@ -138,7 +137,7 @@ impl<'a, St> PropertyGroup<'a, St> {
             iter.init_property_group_properties(self.handle.as_ptr())
         }
         .map_err(|err| IterError::InitIter {
-            entity: IterEntity::Property,
+            entity: ScfEntity::Property,
             parent: self.error_path(),
             err,
         })?;
