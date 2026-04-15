@@ -2,9 +2,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use crate::Instance;
 use crate::Scope;
 use crate::ValueRef;
 use crate::error::HandleCreateError;
+use crate::error::InstanceFromEnvError;
+use crate::error::InstanceFromFmriError;
 use crate::error::LibscfError;
 use crate::error::RefreshError;
 use crate::error::ScfEntity;
@@ -161,15 +164,50 @@ impl<'a> Scf<'a> {
         Scope::new_local(self)
     }
 
-    pub fn refresh(&self, fmri: &str) -> Result<(), RefreshError> {
+    pub fn refresh_instance(&self, fmri: &str) -> Result<(), RefreshError> {
         let fmri = CString::new(fmri).map_err(|err| {
             RefreshError::InvalidFmri { fmri: Box::from(fmri), err }
         })?;
-        self.refresh_cstr(&fmri)
+        self.refresh_instance_cstr(&fmri)
     }
 
-    pub(crate) fn refresh_cstr(&self, fmri: &CStr) -> Result<(), RefreshError> {
-        self.refresher.refresh(fmri)
+    pub fn instance_from_fmri(
+        &self,
+        fmri: &str,
+    ) -> Result<Instance<'_>, InstanceFromFmriError> {
+        Instance::from_fmri(self, fmri)
+    }
+
+    pub fn self_instance_from_env(
+        &self,
+    ) -> Result<Instance<'_>, InstanceFromEnvError> {
+        // From `man smf_method`:
+        //
+        // > Environment Variables
+        // >
+        // > The restarter provides four environment variables to the method
+        // > that determine the context in which the method is invoked.
+        // >
+        // > SMF_FMRI
+        // >
+        // >     The service fault management resource identifier (FMRI) of the
+        // >     instance for which the method is invoked.
+        //
+        // If this process was started under SMF, it can look up its own
+        // instance FMRI via that env var.
+        const SELF_FMRI_ENV_VAR: &str = "SMF_FMRI";
+
+        let fmri = std::env::var(SELF_FMRI_ENV_VAR).map_err(|err| {
+            InstanceFromEnvError::EnvLookup { env_var: SELF_FMRI_ENV_VAR, err }
+        })?;
+        Ok(self.instance_from_fmri(&fmri)?)
+    }
+
+    pub(crate) fn refresh_instance_cstr(
+        &self,
+        fmri: &CStr,
+    ) -> Result<(), RefreshError> {
+        self.refresher.refresh_instance(fmri)
     }
 
     pub(crate) unsafe fn scf_get_scope_local(
@@ -181,6 +219,29 @@ impl<'a> Scf<'a> {
                 self.handle.as_ptr(),
                 libscf_sys::SCF_SCOPE_LOCAL.as_ptr().cast::<i8>(),
                 scope,
+            )
+        })
+    }
+
+    pub(crate) unsafe fn scf_decode_fmri_exact_instance(
+        &self,
+        fmri: *const libc::c_char,
+        instance: *mut libscf_sys::scf_instance_t,
+    ) -> Result<(), LibscfError> {
+        // Require `fmri` to describe exactly an instance.
+        let flags = libscf_sys::SCF_DECODE_FMRI_REQUIRE_INSTANCE
+            | libscf_sys::SCF_DECODE_FMRI_EXACT;
+
+        LibscfError::from_ret(unsafe {
+            libscf_sys::scf_handle_decode_fmri(
+                self.handle.as_ptr(),
+                fmri,
+                std::ptr::null_mut(), // scope
+                std::ptr::null_mut(), // service
+                instance,
+                std::ptr::null_mut(), // property group
+                std::ptr::null_mut(), // property
+                flags,
             )
         })
     }
@@ -220,7 +281,7 @@ enum RefreshMechanism<'a> {
 }
 
 impl RefreshMechanism<'_> {
-    fn refresh(&self, fmri: &CStr) -> Result<(), RefreshError> {
+    fn refresh_instance(&self, fmri: &CStr) -> Result<(), RefreshError> {
         match self {
             RefreshMechanism::Libscf(_) => {
                 // Per the manpage, `smf_refresh_instance()` still sets an error

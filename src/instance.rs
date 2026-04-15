@@ -14,9 +14,11 @@ use crate::Scf;
 use crate::Service;
 use crate::Snapshot;
 use crate::Snapshots;
+use crate::buf::scf_get_name;
 use crate::edit_property_groups::AddPropertyGroupArgs;
 use crate::error::AddPropertyGroupError;
 use crate::error::ErrorPath;
+use crate::error::InstanceFromFmriError;
 use crate::error::IterError;
 use crate::error::IterErrorKind;
 use crate::error::LibscfError;
@@ -32,14 +34,14 @@ use crate::utf8cstring::Utf8CString;
 
 #[derive(Debug)]
 pub struct Instance<'a> {
-    service: &'a Service<'a>,
+    scf: &'a Scf<'a>,
     name: Utf8CString,
     fmri: InstanceFmri,
     handle: ScfObject<'a, libscf_sys::scf_instance_t>,
 }
 
 impl<'a> Instance<'a> {
-    pub(crate) fn new(
+    pub(crate) fn from_service(
         service: &'a Service<'a>,
         name: &str,
     ) -> Result<Option<Self>, LookupError> {
@@ -61,7 +63,7 @@ impl<'a> Instance<'a> {
         };
 
         match result {
-            Ok(()) => Ok(Some(Self { service, name, fmri, handle })),
+            Ok(()) => Ok(Some(Self { scf: service.scf(), name, fmri, handle })),
             Err(LibscfError::NotFound) => Ok(None),
             Err(err) => Err(LookupError::Get {
                 entity: ScfEntity::Instance,
@@ -72,8 +74,49 @@ impl<'a> Instance<'a> {
         }
     }
 
+    pub(crate) fn from_fmri(
+        scf: &'a Scf<'a>,
+        fmri: &str,
+    ) -> Result<Self, InstanceFromFmriError> {
+        let fmri = Utf8CString::from_str(fmri).map_err(|err| {
+            InstanceFromFmriError::InvalidFmri {
+                fmri: fmri.to_string().into_boxed_str(),
+                err,
+            }
+        })?;
+
+        let mut handle = scf.scf_instance_create()?;
+        () = unsafe {
+            scf.scf_decode_fmri_exact_instance(
+                fmri.as_c_str().as_ptr(),
+                handle.as_mut_ptr(),
+            )
+        }
+        .map_err(|err| InstanceFromFmriError::Get {
+            fmri: fmri.to_string().into_boxed_str(),
+            err,
+        })?;
+
+        // On success, we now know `fmri` is a valid instance FMRI.
+        let fmri = InstanceFmri::new_unvalidated(fmri);
+
+        // Given an `InstanceFmri`, we could attempt to parse the name of
+        // the instance out ourself, but it's more straightforward to just ask
+        // scf. This is very unlikely to fail given we just succeeded in looking
+        // up the instance handle.
+        let name = scf_get_name(|buf, buf_len| unsafe {
+            libscf_sys::scf_instance_get_name(handle.as_ptr(), buf, buf_len)
+        })
+        .map_err(|err| InstanceFromFmriError::GetName {
+            fmri: fmri.to_string().into_boxed_str(),
+            err,
+        })?;
+
+        Ok(Self { scf, name, fmri, handle })
+    }
+
     pub(crate) fn scf(&self) -> &'a Scf<'a> {
-        self.service.scf()
+        self.scf
     }
 
     pub(crate) unsafe fn scf_get_snapshot(
@@ -143,7 +186,7 @@ impl<'a> Instance<'a> {
     }
 
     pub fn refresh(&self) -> Result<(), RefreshError> {
-        self.scf().refresh_cstr(self.fmri.as_c_str())
+        self.scf().refresh_instance_cstr(self.fmri.as_c_str())
     }
 
     pub(crate) fn property_group_fmri(
@@ -284,7 +327,7 @@ impl<'a> Iterator for Instances<'a> {
             })
             .map(|result| {
                 result.map(|(name, handle)| Instance {
-                    service: self.service,
+                    scf: self.service.scf(),
                     fmri: self.service.instance_fmri(&name),
                     name,
                     handle,

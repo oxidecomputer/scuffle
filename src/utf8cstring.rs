@@ -58,6 +58,18 @@ pub(crate) struct ServiceFmri(Utf8CString);
 #[derive(Debug)]
 pub(crate) struct InstanceFmri(Utf8CString);
 
+impl InstanceFmri {
+    /// Construct an `InstanceFmri` without validating that `fmri` is actually a
+    /// valid FMRI value describing an instance.
+    ///
+    /// This constructor should only be called if the caller has done its own
+    /// validation; e.g., via `scf_handle_decode_fmri()` with
+    /// `SCF_DECODE_FMRI_EXACT`.
+    pub(crate) fn new_unvalidated(fmri: Utf8CString) -> Self {
+        Self(fmri)
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct PropertyGroupFmri(Utf8CString);
 

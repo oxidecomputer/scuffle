@@ -3,8 +3,8 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::PropertyGroup;
-use crate::PropertyGroupDirect;
 use crate::PropertyGroupComposed;
+use crate::PropertyGroupDirect;
 use crate::PropertyGroups;
 use crate::error::IterError;
 use crate::error::LookupError;

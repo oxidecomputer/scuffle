@@ -96,6 +96,49 @@ pub enum LookupError {
 }
 
 #[derive(Debug, thiserror::Error)]
+pub enum InstanceFromFmriError {
+    #[error(transparent)]
+    HandleCreate(#[from] HandleCreateError),
+
+    #[error("invalid FMRI {fmri:?}")]
+    InvalidFmri {
+        fmri: Box<str>,
+        #[source]
+        err: NulError,
+    },
+
+    #[error("failed to get instance `{fmri}`")]
+    Get {
+        fmri: Box<str>,
+        #[source]
+        err: LibscfError,
+    },
+
+    #[error("failed to get name of instance `{fmri}` from libscf")]
+    GetName {
+        fmri: Box<str>,
+        #[source]
+        err: ScfStringError,
+    },
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum InstanceFromEnvError {
+    #[error(
+        "failed to look up fmri from env var `{env_var}` \
+         (is this process running under SMF?)"
+    )]
+    EnvLookup {
+        env_var: &'static str,
+        #[source]
+        err: std::env::VarError,
+    },
+
+    #[error(transparent)]
+    InstanceFromFmri(#[from] InstanceFromFmriError),
+}
+
+#[derive(Debug, thiserror::Error)]
 pub enum IterErrorKind {
     #[error("failed to initialize iterator")]
     Init(#[source] LibscfError),
@@ -305,14 +348,14 @@ pub enum ScfError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum RefreshError {
-    #[error("invalid fmri {fmri:?}")]
+    #[error("invalid instance FMRI {fmri:?}")]
     InvalidFmri {
         fmri: Box<str>,
         #[source]
         err: NulError,
     },
 
-    #[error("failed to refresh fmri `{fmri}`")]
+    #[error("failed to refresh instance `{fmri}`")]
     Failed {
         fmri: Box<str>,
         #[source]
@@ -320,7 +363,7 @@ pub enum RefreshError {
     },
 
     #[cfg(any(test, feature = "testing"))]
-    #[error("failed to refresh isolated svc.configd")]
+    #[error("failed to refresh via isolated svc.configd")]
     Isolated(#[from] IsolatedConfigdRefreshError),
 }
 

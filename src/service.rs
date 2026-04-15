@@ -112,7 +112,7 @@ impl<'a> Service<'a> {
         &self,
         name: &str,
     ) -> Result<Option<Instance<'_>>, LookupError> {
-        Instance::new(self, name)
+        Instance::from_service(self, name)
     }
 
     pub(crate) fn instance_fmri(&self, name: &Utf8CString) -> InstanceFmri {
