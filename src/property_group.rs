@@ -147,10 +147,15 @@ impl<'a, St> PropertyGroup<'a, St> {
         })
     }
 
+    /// Get the name of this property group.
     pub fn name(&self) -> &str {
         self.name.as_str()
     }
 
+    /// Get the full FMRI of this property group.
+    ///
+    /// Note that if this property group is from a composed view through an
+    /// instance or snapshot, that information is _not_ included in the FMRI.
     pub fn fmri(&self) -> &str {
         self.fmri.as_str()
     }
@@ -159,6 +164,7 @@ impl<'a, St> PropertyGroup<'a, St> {
         self.fmri.append_property(name)
     }
 
+    /// Look up a property in this property group by name.
     pub fn property(
         &self,
         name: &str,
@@ -166,6 +172,7 @@ impl<'a, St> PropertyGroup<'a, St> {
         Property::from_property_group(self, name)
     }
 
+    /// Get an iterator over all properties in this property group.
     pub fn properties(&self) -> Result<Properties<'_, St>, IterError> {
         let iter = ScfUninitializedIter::new(self.scf())?;
         let iter = unsafe {
@@ -271,6 +278,12 @@ impl<'a> PropertyGroup<'a, PropertyGroupDirect> {
         })
     }
 
+    /// Open a [`Transaction`] to make changes to the properties within this
+    /// property group.
+    ///
+    /// This method is only available on `PropertyGroup`s in the
+    /// [`PropertyGroupDirect`] type state; modifications to property groups
+    /// through composed views are not supported.
     pub fn transaction(
         &mut self,
     ) -> Result<Transaction<'_, 'a, TransactionReset>, TransactionError> {
@@ -378,6 +391,8 @@ impl ErrorPath for PropertyGroupParent<'_> {
     }
 }
 
+/// Iterator over all [`PropertyGroup`]s in an instance, service, or composed
+/// view (instance or snapshot).
 pub struct PropertyGroups<'a, St> {
     parent: PropertyGroupParent<'a>,
     iter: ScfIter<'a, libscf_sys::scf_propertygroup_t>,

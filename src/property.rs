@@ -20,6 +20,16 @@ use crate::scf::ScfObject;
 use crate::utf8cstring::PropertyFmri;
 use crate::utf8cstring::Utf8CString;
 
+/// Handle to an SMF property within a property group.
+///
+/// `Property`s carry a type-state parameter from their enclosing property group
+/// (either [`PropertyGroupDirect`] or [`PropertyGroupComposed`]), but its type
+/// does not affect the `Property` itself. A `Property` is a read-only
+/// interface; to change a property's contents, use
+/// [`PropertyGroup::transaction()`] on the enclosing property group.
+///
+/// [`PropertyGroupComposed`]: `crate::PropertyGroupComposed`
+/// [`PropertyGroupDirect`]: `crate::PropertyGroupDirect`
 pub struct Property<'a, St> {
     property_group: &'a PropertyGroup<'a, St>,
     name: Utf8CString,
@@ -65,14 +75,23 @@ impl<'a, St> Property<'a, St> {
         self.property_group.scf()
     }
 
+    /// Get the name of this property.
     pub fn name(&self) -> &str {
         self.name.as_str()
     }
 
+    /// Get the full FMRI of this property.
+    ///
+    /// Note that if this property is from a composed view through an instance
+    /// or snapshot, that information is _not_ included in the FMRI.
     pub fn fmri(&self) -> &str {
         self.fmri.as_str()
     }
 
+    /// Get an iterator over all values of this property.
+    ///
+    /// If you expect this property to have exactly one value, consider using
+    /// [`Property::single_value()`] instead.
     pub fn values(&self) -> Result<Values<'_, St>, IterError> {
         let iter = ScfUninitializedIter::new(self.scf())?;
         let iter = unsafe { iter.init_property_values(self.handle.as_ptr()) }
@@ -84,6 +103,10 @@ impl<'a, St> Property<'a, St> {
         Values::new(self, iter)
     }
 
+    /// Get the value of this property.
+    ///
+    /// This method fails if the property doesn't have exactly one associated
+    /// value; for such properties, use [`Property::values()`] instead.
     pub fn single_value(&self) -> Result<Value, SingleValueError> {
         let mut iter = self.values()?;
 
@@ -124,6 +147,7 @@ impl<St> ErrorPath for Property<'_, St> {
     }
 }
 
+/// Iterator over all [`Property`]s in a [`PropertyGroup`].
 pub struct Properties<'a, St> {
     property_group: &'a PropertyGroup<'a, St>,
     iter: ScfIter<'a, libscf_sys::scf_property_t>,
