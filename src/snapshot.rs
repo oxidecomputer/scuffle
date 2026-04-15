@@ -2,10 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::HasPropertyGroups;
+use crate::HasComposedPropertyGroups;
 use crate::Instance;
 use crate::PropertyGroup;
-use crate::PropertyGroupSnapshot;
+use crate::PropertyGroupComposed;
 use crate::PropertyGroups;
 use crate::Scf;
 use crate::error::ErrorPath;
@@ -13,7 +13,6 @@ use crate::error::IterError;
 use crate::error::LibscfError;
 use crate::error::LookupError;
 use crate::error::ScfEntity;
-use crate::error::format_lookup_target;
 use crate::iter::ScfIter;
 use crate::scf::ScfObject;
 use crate::utf8cstring::PropertyGroupFmri;
@@ -46,19 +45,13 @@ impl<'a> Snapshot<'a> {
                 .scf_get_snapshot(name.as_c_str().as_ptr(), handle.as_mut_ptr())
         };
 
-        // Construct the snapshot so we can either return it (on success) or
-        // pass it to `format_lookup_target()` (on failure).
-        let snap = Self { instance, name, handle };
-
         match result {
-            Ok(()) => Ok(Some(snap)),
+            Ok(()) => Ok(Some(Self { instance, name, handle })),
             Err(LibscfError::NotFound) => Ok(None),
             Err(err) => Err(LookupError::Get {
                 entity: ScfEntity::Snapshot,
-                target: format_lookup_target(
-                    instance.fmri_internal(),
-                    Some(&snap),
-                ),
+                parent: instance.error_path(),
+                name: name.into_string().into_boxed_str(),
                 err,
             }),
         }
@@ -94,19 +87,18 @@ impl<'a> Snapshot<'a> {
     }
 }
 
-impl HasPropertyGroups for Snapshot<'_> {
-    type St = PropertyGroupSnapshot;
-
-    fn property_group(
+impl HasComposedPropertyGroups for Snapshot<'_> {
+    fn property_group_composed(
         &self,
         name: &str,
-    ) -> Result<Option<PropertyGroup<'_, Self::St>>, LookupError> {
+    ) -> Result<Option<PropertyGroup<'_, PropertyGroupComposed>>, LookupError>
+    {
         PropertyGroup::from_snapshot(self, name)
     }
 
-    fn property_groups(
+    fn property_groups_composed(
         &self,
-    ) -> Result<PropertyGroups<'_, Self::St>, IterError> {
+    ) -> Result<PropertyGroups<'_, PropertyGroupComposed>, IterError> {
         let iter = unsafe {
             self.instance.scf_iter_pgs_composed(self.handle.as_ptr())
         }?;
@@ -116,10 +108,17 @@ impl HasPropertyGroups for Snapshot<'_> {
 
 impl ErrorPath for Snapshot<'_> {
     fn error_path(&self) -> Box<str> {
-        // There is no syntax for including a snapshot in an FMRI.
-        format!("{} ({} snapshot)", self.instance_fmri(), self.name())
-            .into_boxed_str()
+        snapshot_error_path(self.instance, &self.name)
     }
+}
+
+fn snapshot_error_path(
+    instance: &Instance<'_>,
+    name: &Utf8CString,
+) -> Box<str> {
+    // There is no syntax for including a snapshot in an FMRI, so we use our
+    // instance's FMRI and note the name of the snapshot.
+    format!("{} ({name} snapshot)", instance.fmri()).into_boxed_str()
 }
 
 pub struct Snapshots<'a> {

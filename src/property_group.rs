@@ -19,7 +19,6 @@ use crate::error::LibscfError;
 use crate::error::LookupError;
 use crate::error::ScfEntity;
 use crate::error::TransactionError;
-use crate::error::format_lookup_target;
 use crate::iter::ScfIter;
 use crate::iter::ScfUninitializedIter;
 use crate::scf::ScfObject;
@@ -28,11 +27,45 @@ use crate::utf8cstring::PropertyGroupFmri;
 use crate::utf8cstring::Utf8CString;
 use std::marker::PhantomData;
 
+/// Type-state marker for a [`PropertyGroup`] that is directly attached to an
+/// [`Instance`] or [`Service`].
+///
+/// Directly-attached property groups may have their properties modified via
+/// [`PropertyGroup::transaction()`].
 #[derive(Debug)]
-pub enum PropertyGroupEditable {}
-#[derive(Debug)]
-pub enum PropertyGroupSnapshot {}
+pub enum PropertyGroupDirect {}
 
+/// Type-state marker for a [`PropertyGroup`] that is from a composed view.
+///
+/// Composed view property groups may be obtained via the
+/// [`HasComposedPropertyGroups`] implementation on [`Instance`] (giving a view
+/// of an instance -> service) or [`Snapshot`] (giving a view of a snapshot ->
+/// instance -> service).
+///
+/// Composed property groups may not be modified. `libscf` does not allow
+/// modification of composed property groups from snapshots, but does allow
+/// modification of composed property groups from instances. `scuffle` is
+/// intentionally less flexible in this; modifying property groups through a
+/// composed view can be confusing at runtime, so `scuffle` requires all
+/// modifications be made via directly attached properties.
+///
+/// [`HasComposedPropertyGroups`]: `crate::HasComposedPropertyGroups`
+#[derive(Debug)]
+pub enum PropertyGroupComposed {}
+
+/// Handle to an SMF property group.
+///
+/// Property groups may be associated with different kinds of parent entities:
+///
+/// * [`Service`]s (direct attached)
+/// * [`Instance`]s (direct attached or composed)
+/// * [`Snapshot`]s (composed)
+///
+/// and may be obtained via the [`HasDirectPropertyGroups`] or
+/// [`HasComposedPropertyGroups`] implementations on each of those parent types.
+///
+/// [`HasComposedPropertyGroups`]: `crate::HasComposedPropertyGroups`
+/// [`HasDirectPropertyGroups`]: `crate::HasDirectPropertyGroups`
 #[derive(Debug)]
 pub struct PropertyGroup<'a, St> {
     parent: PropertyGroupParent<'a>,
@@ -75,7 +108,8 @@ impl<'a, St> PropertyGroup<'a, St> {
             Err(LibscfError::NotFound) => Ok(None),
             Err(err) => Err(LookupError::Get {
                 entity: ScfEntity::PropertyGroup,
-                target: format_lookup_target(&fmri, parent.snapshot()),
+                parent: parent.error_path(),
+                name: name.into_string().into_boxed_str(),
                 err,
             }),
         }
@@ -85,8 +119,8 @@ impl<'a, St> PropertyGroup<'a, St> {
         self.handle.scf()
     }
 
-    pub(crate) fn snapshot(&self) -> Option<&'a Snapshot<'a>> {
-        self.parent.snapshot()
+    pub(crate) fn parent(&self) -> PropertyGroupParent<'a> {
+        self.parent
     }
 
     pub(crate) unsafe fn scf_get_property(
@@ -138,17 +172,29 @@ impl<'a, St> PropertyGroup<'a, St> {
 
 impl<St> ErrorPath for PropertyGroup<'_, St> {
     fn error_path(&self) -> Box<str> {
-        if let Some(snapshot) = self.snapshot() {
-            format!("{} ({} snapshot)", self.fmri(), snapshot.name())
-                .into_boxed_str()
-        } else {
-            self.fmri().to_string().into_boxed_str()
+        match &self.parent {
+            // If we are direct-attached to a service or instance, our FMRI
+            // is a full description of ourself for errors.
+            //
+            // If we're going through a composed view, that information is not
+            // included in any way in `self.fmri()`; append a note.
+            PropertyGroupParent::Service(_)
+            | PropertyGroupParent::Instance(_) => {
+                self.fmri().to_string().into_boxed_str()
+            }
+            PropertyGroupParent::InstanceComposed(_) => {
+                format!("{} (composed)", self.fmri()).into_boxed_str()
+            }
+            PropertyGroupParent::Snapshot(snapshot) => {
+                format!("{} ({} snapshot)", self.fmri(), snapshot.name())
+                    .into_boxed_str()
+            }
         }
     }
 }
 
-// Methods only available on editable property groups.
-impl<'a> PropertyGroup<'a, PropertyGroupEditable> {
+// Methods only available on direct-attached property groups.
+impl<'a> PropertyGroup<'a, PropertyGroupDirect> {
     pub(crate) fn from_service(
         service: &'a Service<'a>,
         name: &str,
@@ -228,20 +274,28 @@ impl<'a> PropertyGroup<'a, PropertyGroupEditable> {
     }
 }
 
-// Methods only available on snapshot property groups.
-impl<'a> PropertyGroup<'a, PropertyGroupSnapshot> {
+// Methods only available on composed property groups.
+impl<'a> PropertyGroup<'a, PropertyGroupComposed> {
     pub(crate) fn from_snapshot(
         snapshot: &'a Snapshot<'a>,
         name: &str,
     ) -> Result<Option<Self>, LookupError> {
         Self::from_parent(PropertyGroupParent::Snapshot(snapshot), name)
     }
+
+    pub(crate) fn from_instance_composed(
+        instance: &'a Instance<'a>,
+        name: &str,
+    ) -> Result<Option<Self>, LookupError> {
+        Self::from_parent(PropertyGroupParent::InstanceComposed(instance), name)
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
-enum PropertyGroupParent<'a> {
+pub(crate) enum PropertyGroupParent<'a> {
     Service(&'a Service<'a>),
     Instance(&'a Instance<'a>),
+    InstanceComposed(&'a Instance<'a>),
     Snapshot(&'a Snapshot<'a>),
 }
 
@@ -249,30 +303,20 @@ impl<'a> PropertyGroupParent<'a> {
     fn scf(&self) -> &'a Scf<'a> {
         match self {
             Self::Service(service) => service.scf(),
-            Self::Instance(instance) => instance.scf(),
+            Self::Instance(instance) | Self::InstanceComposed(instance) => {
+                instance.scf()
+            }
             Self::Snapshot(snapshot) => snapshot.scf(),
         }
     }
 
     fn property_group_fmri(&self, name: &Utf8CString) -> PropertyGroupFmri {
         match self {
-            PropertyGroupParent::Service(service) => {
-                service.property_group_fmri(name)
-            }
-            PropertyGroupParent::Instance(instance) => {
+            Self::Service(service) => service.property_group_fmri(name),
+            Self::Instance(instance) | Self::InstanceComposed(instance) => {
                 instance.property_group_fmri(name)
             }
-            PropertyGroupParent::Snapshot(snapshot) => {
-                snapshot.property_group_fmri(name)
-            }
-        }
-    }
-
-    fn snapshot(&self) -> Option<&'a Snapshot<'a>> {
-        match self {
-            PropertyGroupParent::Service(_)
-            | PropertyGroupParent::Instance(_) => None,
-            PropertyGroupParent::Snapshot(snapshot) => Some(snapshot),
+            Self::Snapshot(snapshot) => snapshot.property_group_fmri(name),
         }
     }
 
@@ -286,6 +330,9 @@ impl<'a> PropertyGroupParent<'a> {
             Self::Instance(instance) => unsafe {
                 instance.scf_get_pg(name, pg)
             },
+            Self::InstanceComposed(instance) => unsafe {
+                instance.scf_get_pg_composed(std::ptr::null(), name, pg)
+            },
             Self::Snapshot(snapshot) => unsafe {
                 snapshot.scf_get_pg(name, pg)
             },
@@ -298,6 +345,9 @@ impl ErrorPath for PropertyGroupParent<'_> {
         match self {
             Self::Service(service) => service.error_path(),
             Self::Instance(instance) => instance.error_path(),
+            Self::InstanceComposed(instance) => {
+                format!("{} (composed)", instance.error_path()).into_boxed_str()
+            }
             Self::Snapshot(snapshot) => snapshot.error_path(),
         }
     }
@@ -309,7 +359,7 @@ pub struct PropertyGroups<'a, St> {
     _state: PhantomData<fn() -> St>,
 }
 
-impl<'a> PropertyGroups<'a, PropertyGroupEditable> {
+impl<'a> PropertyGroups<'a, PropertyGroupDirect> {
     pub(crate) fn from_service(
         service: &'a Service<'a>,
         iter: ScfIter<'a, libscf_sys::scf_propertygroup_t>,
@@ -333,13 +383,24 @@ impl<'a> PropertyGroups<'a, PropertyGroupEditable> {
     }
 }
 
-impl<'a> PropertyGroups<'a, PropertyGroupSnapshot> {
+impl<'a> PropertyGroups<'a, PropertyGroupComposed> {
     pub(crate) fn from_snapshot(
         snapshot: &'a Snapshot<'a>,
         iter: ScfIter<'a, libscf_sys::scf_propertygroup_t>,
     ) -> Self {
         Self {
             parent: PropertyGroupParent::Snapshot(snapshot),
+            iter,
+            _state: PhantomData,
+        }
+    }
+
+    pub(crate) fn from_instance_composed(
+        instance: &'a Instance<'a>,
+        iter: ScfIter<'a, libscf_sys::scf_propertygroup_t>,
+    ) -> Self {
+        Self {
+            parent: PropertyGroupParent::InstanceComposed(instance),
             iter,
             _state: PhantomData,
         }

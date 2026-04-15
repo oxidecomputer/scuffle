@@ -13,9 +13,9 @@ use crate::error::LibscfError;
 use crate::error::LookupError;
 use crate::error::ScfEntity;
 use crate::error::SingleValueError;
-use crate::error::format_lookup_target;
 use crate::iter::ScfIter;
 use crate::iter::ScfUninitializedIter;
+use crate::property_group::PropertyGroupParent;
 use crate::scf::ScfObject;
 use crate::utf8cstring::PropertyFmri;
 use crate::utf8cstring::Utf8CString;
@@ -54,7 +54,8 @@ impl<'a, St> Property<'a, St> {
             Err(LibscfError::NotFound) => Ok(None),
             Err(err) => Err(LookupError::Get {
                 entity: ScfEntity::Property,
-                target: format_lookup_target(&fmri, property_group.snapshot()),
+                parent: property_group.error_path(),
+                name: name.into_string().into_boxed_str(),
                 err,
             }),
         }
@@ -102,11 +103,23 @@ impl<'a, St> Property<'a, St> {
 
 impl<St> ErrorPath for Property<'_, St> {
     fn error_path(&self) -> Box<str> {
-        if let Some(snapshot) = self.property_group.snapshot() {
-            format!("{} ({} snapshot)", self.fmri(), snapshot.name())
-                .into_boxed_str()
-        } else {
-            self.fmri().to_string().into_boxed_str()
+        // If our enclosing property group is direct-attached service or
+        // instance, our FMRI is a full description of ourself for errors.
+        //
+        // If we're going through a composed view, that information is not
+        // included in any way in `self.fmri()`; append a note.
+        match self.property_group.parent() {
+            PropertyGroupParent::Service(_)
+            | PropertyGroupParent::Instance(_) => {
+                self.fmri().to_string().into_boxed_str()
+            }
+            PropertyGroupParent::InstanceComposed(_) => {
+                format!("{} (composed)", self.fmri()).into_boxed_str()
+            }
+            PropertyGroupParent::Snapshot(snapshot) => {
+                format!("{} ({} snapshot)", self.fmri(), snapshot.name())
+                    .into_boxed_str()
+            }
         }
     }
 }

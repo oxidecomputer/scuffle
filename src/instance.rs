@@ -4,9 +4,11 @@
 
 use crate::AddPropertyGroupFlags;
 use crate::EditPropertyGroups;
-use crate::HasPropertyGroups;
+use crate::HasComposedPropertyGroups;
+use crate::HasDirectPropertyGroups;
 use crate::PropertyGroup;
-use crate::PropertyGroupEditable;
+use crate::PropertyGroupComposed;
+use crate::PropertyGroupDirect;
 use crate::PropertyGroups;
 use crate::Scf;
 use crate::Service;
@@ -21,7 +23,6 @@ use crate::error::LibscfError;
 use crate::error::LookupError;
 use crate::error::RefreshError;
 use crate::error::ScfEntity;
-use crate::error::format_lookup_target;
 use crate::iter::ScfIter;
 use crate::iter::ScfUninitializedIter;
 use crate::scf::ScfObject;
@@ -64,7 +65,8 @@ impl<'a> Instance<'a> {
             Err(LibscfError::NotFound) => Ok(None),
             Err(err) => Err(LookupError::Get {
                 entity: ScfEntity::Instance,
-                target: format_lookup_target(&fmri, None),
+                parent: service.error_path(),
+                name: name.into_string().into_boxed_str(),
                 err,
             }),
         }
@@ -144,10 +146,6 @@ impl<'a> Instance<'a> {
         self.scf().refresh_cstr(self.fmri.as_c_str())
     }
 
-    pub(crate) fn fmri_internal(&self) -> &InstanceFmri {
-        &self.fmri
-    }
-
     pub(crate) fn property_group_fmri(
         &self,
         name: &Utf8CString,
@@ -181,7 +179,7 @@ impl EditPropertyGroups for Instance<'_> {
         name: &str,
         pg_type: &str,
         flags: AddPropertyGroupFlags,
-    ) -> Result<PropertyGroup<'_, PropertyGroupEditable>, AddPropertyGroupError>
+    ) -> Result<PropertyGroup<'_, PropertyGroupDirect>, AddPropertyGroupError>
     {
         let AddPropertyGroupArgs { name, pg_type, mut handle, flags } =
             AddPropertyGroupArgs::validate(
@@ -210,19 +208,18 @@ impl EditPropertyGroups for Instance<'_> {
     }
 }
 
-impl HasPropertyGroups for Instance<'_> {
-    type St = PropertyGroupEditable;
-
-    fn property_group(
+impl HasDirectPropertyGroups for Instance<'_> {
+    fn property_group_direct(
         &self,
         name: &str,
-    ) -> Result<Option<PropertyGroup<'_, Self::St>>, LookupError> {
+    ) -> Result<Option<PropertyGroup<'_, PropertyGroupDirect>>, LookupError>
+    {
         PropertyGroup::from_instance(self, name)
     }
 
-    fn property_groups(
+    fn property_groups_direct(
         &self,
-    ) -> Result<PropertyGroups<'_, Self::St>, IterError> {
+    ) -> Result<PropertyGroups<'_, PropertyGroupDirect>, IterError> {
         let iter = ScfUninitializedIter::new(self.scf())?;
         let iter =
             unsafe { iter.init_instance_property_groups(self.handle.as_ptr()) }
@@ -232,6 +229,28 @@ impl HasPropertyGroups for Instance<'_> {
                     kind: IterErrorKind::Init(err),
                 })?;
         Ok(PropertyGroups::from_instance(self, iter))
+    }
+}
+
+impl HasComposedPropertyGroups for Instance<'_> {
+    fn property_group_composed(
+        &self,
+        name: &str,
+    ) -> Result<Option<PropertyGroup<'_, PropertyGroupComposed>>, LookupError>
+    {
+        PropertyGroup::from_instance_composed(self, name)
+    }
+
+    fn property_groups_composed(
+        &self,
+    ) -> Result<PropertyGroups<'_, PropertyGroupComposed>, IterError> {
+        let iter = unsafe {
+            self.scf_iter_pgs_composed(
+                // no snapshot; compose instance -> service only
+                std::ptr::null(),
+            )
+        }?;
+        Ok(PropertyGroups::from_instance_composed(self, iter))
     }
 }
 

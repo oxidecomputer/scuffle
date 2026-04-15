@@ -52,8 +52,6 @@ const INSTANCE_PREFIX: &str = ":";
 const PG_PREFIX: &str = "/:properties/";
 const PROP_PREFIX: &str = "/";
 
-pub(crate) trait Fmri: fmt::Display {}
-
 #[derive(Debug)]
 pub(crate) struct ServiceFmri(Utf8CString);
 
@@ -120,8 +118,6 @@ macro_rules! impl_wrapper {
                 self.0.fmt(f)
             }
         }
-
-        impl Fmri for $type {}
     };
 }
 

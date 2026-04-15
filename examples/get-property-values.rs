@@ -4,7 +4,8 @@
 
 use anyhow::bail;
 use clap::Parser;
-use scuffle::HasPropertyGroups;
+use scuffle::HasComposedPropertyGroups;
+use scuffle::HasDirectPropertyGroups;
 use scuffle::Property;
 use scuffle::PropertyGroup;
 use scuffle::Scf;
@@ -16,6 +17,8 @@ struct Args {
     service: String,
     #[arg(long)]
     instance: Option<String>,
+    #[arg(long, requires = "instance", conflicts_with = "snapshot")]
+    composed: bool,
     #[arg(long, requires = "instance")]
     snapshot: Option<String>,
     property_group: Option<String>,
@@ -39,15 +42,15 @@ fn print_properties<St>(pg: &PropertyGroup<'_, St>) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn run(
-    target: &impl HasPropertyGroups,
+fn run_direct(
+    target: &impl HasDirectPropertyGroups,
     name: &str,
     property_group: Option<String>,
     property: Option<String>,
 ) -> anyhow::Result<()> {
     if let Some(property_group) = property_group {
-        let Some(pg) = target.property_group(&property_group)? else {
-            bail!("property group `{property_group}` not found in `{name}`",);
+        let Some(pg) = target.property_group_direct(&property_group)? else {
+            bail!("property group `{property_group}` not found in `{name}`");
         };
 
         if let Some(property) = property {
@@ -59,7 +62,36 @@ fn run(
             print_properties(&pg)?;
         }
     } else {
-        for pg in target.property_groups()? {
+        for pg in target.property_groups_direct()? {
+            let pg = pg?;
+            println!("-- {} --", pg.fmri());
+            print_properties(&pg)?;
+        }
+    }
+    Ok(())
+}
+
+fn run_composed(
+    target: &impl HasComposedPropertyGroups,
+    name: &str,
+    property_group: Option<String>,
+    property: Option<String>,
+) -> anyhow::Result<()> {
+    if let Some(property_group) = property_group {
+        let Some(pg) = target.property_group_composed(&property_group)? else {
+            bail!("property group `{property_group}` not found in `{name}`");
+        };
+
+        if let Some(property) = property {
+            let Some(prop) = pg.property(&property)? else {
+                bail!("property `{property}` not found in `{}`", pg.fmri());
+            };
+            print_property_values(&prop)?;
+        } else {
+            print_properties(&pg)?;
+        }
+    } else {
+        for pg in target.property_groups_composed()? {
             let pg = pg?;
             println!("-- {} --", pg.fmri());
             print_properties(&pg)?;
@@ -69,8 +101,14 @@ fn run(
 }
 
 fn main() -> anyhow::Result<()> {
-    let Args { service, instance, snapshot, property_group, property } =
-        Args::parse();
+    let Args {
+        service,
+        instance,
+        composed,
+        snapshot,
+        property_group,
+        property,
+    } = Args::parse();
 
     let scf = Scf::connect(Zone::Global)?;
     let scope = scf.scope_local()?;
@@ -91,12 +129,15 @@ fn main() -> anyhow::Result<()> {
                 );
             };
             let name = format!("{} ({} snapshot)", inst.fmri(), snap.name());
-            run(&snap, &name, property_group, property)?;
+            run_composed(&snap, &name, property_group, property)?;
+        } else if composed {
+            let name = format!("{} (composed)", inst.fmri());
+            run_composed(&inst, &name, property_group, property)?;
         } else {
-            run(&inst, inst.fmri(), property_group, property)?;
+            run_direct(&inst, inst.fmri(), property_group, property)?;
         }
     } else {
-        run(&service, service.fmri(), property_group, property)?;
+        run_direct(&service, service.fmri(), property_group, property)?;
     }
 
     Ok(())

@@ -2,9 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::HasPropertyGroups;
+use crate::HasDirectPropertyGroups;
 use crate::PropertyGroup;
-use crate::PropertyGroupEditable;
+use crate::PropertyGroupDirect;
 use crate::Scf;
 use crate::error::AddPropertyGroupError;
 use crate::error::DeletePropertyGroupError;
@@ -26,22 +26,20 @@ pub enum DeletePropertyGroupResult {
     DoesNotExist,
 }
 
-pub trait EditPropertyGroups:
-    HasPropertyGroups<St = PropertyGroupEditable> + ErrorPath
-{
+pub trait EditPropertyGroups: HasDirectPropertyGroups + ErrorPath {
     fn add_property_group(
         &mut self,
         name: &str,
         pg_type: &str,
         flags: AddPropertyGroupFlags,
-    ) -> Result<PropertyGroup<'_, PropertyGroupEditable>, AddPropertyGroupError>;
+    ) -> Result<PropertyGroup<'_, PropertyGroupDirect>, AddPropertyGroupError>;
 
     fn ensure_property_group(
         &mut self,
         name: &str,
         pg_type: &str,
         flags: AddPropertyGroupFlags,
-    ) -> Result<PropertyGroup<'_, PropertyGroupEditable>, AddPropertyGroupError>
+    ) -> Result<PropertyGroup<'_, PropertyGroupDirect>, AddPropertyGroupError>
     {
         // This implementation is quite awkward to avoid borrow-checker
         // problems. First, we attempt to unconditionally add the pg as new; if
@@ -63,7 +61,7 @@ pub trait EditPropertyGroups:
             Err(err) => return Err(err),
         }
 
-        self.property_group(name)
+        self.property_group_direct(name)
             .map_err(|err| AddPropertyGroupError::ExistenceLookup {
                 parent: self.error_path(),
                 name: Box::from(name),
@@ -79,7 +77,7 @@ pub trait EditPropertyGroups:
         &mut self,
         name: &str,
     ) -> Result<DeletePropertyGroupResult, DeletePropertyGroupError> {
-        let pg = match self.property_group(name) {
+        let pg = match self.property_group_direct(name) {
             Ok(Some(pg)) => pg,
             Ok(None) => return Ok(DeletePropertyGroupResult::DoesNotExist),
             Err(err) => {

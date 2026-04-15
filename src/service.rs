@@ -4,11 +4,11 @@
 
 use crate::AddPropertyGroupFlags;
 use crate::EditPropertyGroups;
-use crate::HasPropertyGroups;
+use crate::HasDirectPropertyGroups;
 use crate::Instance;
 use crate::Instances;
 use crate::PropertyGroup;
-use crate::PropertyGroupEditable;
+use crate::PropertyGroupDirect;
 use crate::PropertyGroups;
 use crate::Scf;
 use crate::Scope;
@@ -20,7 +20,6 @@ use crate::error::IterErrorKind;
 use crate::error::LibscfError;
 use crate::error::LookupError;
 use crate::error::ScfEntity;
-use crate::error::format_lookup_target;
 use crate::iter::ScfUninitializedIter;
 use crate::scf::ScfObject;
 use crate::utf8cstring::InstanceFmri;
@@ -66,7 +65,8 @@ impl<'a> Service<'a> {
             Err(LibscfError::NotFound) => Ok(None),
             Err(err) => Err(LookupError::Get {
                 entity: ScfEntity::Service,
-                target: format_lookup_target(&fmri, None),
+                parent: "scope".into(),
+                name: name.into_string().into_boxed_str(),
                 err,
             }),
         }
@@ -144,7 +144,7 @@ impl EditPropertyGroups for Service<'_> {
         name: &str,
         pg_type: &str,
         flags: AddPropertyGroupFlags,
-    ) -> Result<PropertyGroup<'_, PropertyGroupEditable>, AddPropertyGroupError>
+    ) -> Result<PropertyGroup<'_, PropertyGroupDirect>, AddPropertyGroupError>
     {
         let AddPropertyGroupArgs { name, pg_type, mut handle, flags } =
             AddPropertyGroupArgs::validate(
@@ -173,19 +173,18 @@ impl EditPropertyGroups for Service<'_> {
     }
 }
 
-impl HasPropertyGroups for Service<'_> {
-    type St = PropertyGroupEditable;
-
-    fn property_group(
+impl HasDirectPropertyGroups for Service<'_> {
+    fn property_group_direct(
         &self,
         name: &str,
-    ) -> Result<Option<PropertyGroup<'_, Self::St>>, LookupError> {
+    ) -> Result<Option<PropertyGroup<'_, PropertyGroupDirect>>, LookupError>
+    {
         PropertyGroup::from_service(self, name)
     }
 
-    fn property_groups(
+    fn property_groups_direct(
         &self,
-    ) -> Result<PropertyGroups<'_, Self::St>, IterError> {
+    ) -> Result<PropertyGroups<'_, PropertyGroupDirect>, IterError> {
         let iter = ScfUninitializedIter::new(self.scf())?;
         let iter =
             unsafe { iter.init_service_property_groups(self.handle.as_ptr()) }

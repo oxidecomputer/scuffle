@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::PropertyGroup;
-use crate::PropertyGroupEditable;
+use crate::PropertyGroupDirect;
 use crate::Scf;
 use crate::ValueKind;
 use crate::ValueRef;
@@ -76,7 +76,7 @@ pub struct Transaction<'a, 'pg, St> {
 #[derive(Debug)]
 struct TransactionInner<'a, 'pg> {
     // Parent property group of this transaction.
-    property_group: &'a mut PropertyGroup<'pg, PropertyGroupEditable>,
+    property_group: &'a mut PropertyGroup<'pg, PropertyGroupDirect>,
     handle: ScfObject<'a, libscf_sys::scf_transaction_t>,
     // We don't want to drop the `TransactionEntry` values as long as they're
     // still associated with the transaction in `handle`. We clear `entries` out
@@ -124,7 +124,7 @@ impl<'a, 'pg, St> Transaction<'a, 'pg, St> {
 // Methods available on Reset (also the just-created state) transactions.
 impl<'a, 'pg> Transaction<'a, 'pg, TransactionReset> {
     pub(crate) fn new(
-        property_group: &'a mut PropertyGroup<'pg, PropertyGroupEditable>,
+        property_group: &'a mut PropertyGroup<'pg, PropertyGroupDirect>,
     ) -> Result<Self, TransactionError> {
         let handle = property_group.scf().scf_transaction_create()?;
         Ok(Self {

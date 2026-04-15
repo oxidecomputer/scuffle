@@ -2,9 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::Snapshot;
 use crate::ValueKind;
-use crate::utf8cstring::Fmri;
 use chrono::DateTime;
 use chrono::Utc;
 use num_traits::FromPrimitive;
@@ -87,24 +85,14 @@ pub enum LookupError {
         err: NulError,
     },
 
-    #[error("failed to get {entity} {target}")]
+    #[error("failed to get {entity} `{name}` within `{parent}`")]
     Get {
         entity: ScfEntity,
-        target: Box<str>,
+        parent: Box<str>,
+        name: Box<str>,
         #[source]
         err: LibscfError,
     },
-}
-
-pub(crate) fn format_lookup_target<T: Fmri>(
-    fmri: &T,
-    snapshot: Option<&Snapshot<'_>>,
-) -> Box<str> {
-    match snapshot {
-        Some(snap) => format!("`{fmri}` ({} snapshot)", snap.name()),
-        None => format!("`{fmri}`"),
-    }
-    .into_boxed_str()
 }
 
 #[derive(Debug, thiserror::Error)]
