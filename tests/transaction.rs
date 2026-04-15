@@ -7,7 +7,9 @@ use proptest::prelude::any;
 use proptest::proptest;
 use proptest::strategy::Strategy;
 use scuffle::AddPropertyGroupFlags;
+use scuffle::DeletePropertyGroupResult;
 use scuffle::EditPropertyGroups;
+use scuffle::HasComposedPropertyGroups;
 use scuffle::HasDirectPropertyGroups;
 use scuffle::PropertyGroupUpdateResult;
 use scuffle::Scf;
@@ -249,6 +251,434 @@ fn transaction_property_ensure_overwrites() {
                 .expect("iterate values");
 
             assert_eq!(readback, vec![val2]);
+        }
+    });
+}
+
+/// Write a property via a transaction, then verify it is NOT visible
+/// through the "running" snapshot until after `instance.refresh()`.
+#[test]
+fn transaction_snapshot_visibility_after_refresh() {
+    let isolated =
+        IsolatedConfigd::builder("test-svc").unwrap().build().unwrap();
+    let scf = Scf::connect_isolated(&isolated).unwrap();
+    let scope = scf.scope_local().unwrap();
+    let service = scope.service("test-svc").unwrap().unwrap();
+    let instance =
+        RefCell::new(service.instance("default").unwrap().unwrap());
+
+    let pg_counter = AtomicU32::new(0);
+
+    proptest!(|(val: Value)| {
+        let n = pg_counter.fetch_add(1, Ordering::Relaxed);
+        let pg_name = format!("spg{n}");
+
+        // Write phase: add a property group with a single property.
+        {
+            let mut inst = instance.borrow_mut();
+            let mut pg = inst
+                .add_property_group(
+                    &pg_name,
+                    "application",
+                    AddPropertyGroupFlags::Persistent,
+                )
+                .expect("add property group");
+
+            let tx = pg.transaction().expect("create transaction");
+            let mut tx = tx.start().expect("start transaction");
+            tx.property_new("prop", val.as_value_ref())
+                .expect("property_new");
+            let result = tx.commit().expect("commit");
+            assert_matches!(
+                result, TransactionCommitResult::Success(_),
+                "commit should succeed",
+            );
+        }
+
+        // The new property group should NOT be visible through the
+        // "running" snapshot before refresh.
+        {
+            let inst = instance.borrow();
+            let snapshot = inst
+                .snapshot("running")
+                .expect("lookup snapshot")
+                .expect("running snapshot should exist");
+            let pg = snapshot
+                .property_group_composed(&pg_name)
+                .expect("lookup pg composed");
+            assert!(
+                pg.is_none(),
+                "property group {pg_name} should not be visible \
+                 in the running snapshot before refresh",
+            );
+        }
+
+        // Refresh the instance so its "running" snapshot is updated.
+        {
+            let inst = instance.borrow();
+            inst.refresh().expect("refresh");
+        }
+
+        // After refresh, the property group and its value SHOULD be
+        // visible through the "running" snapshot.
+        {
+            let inst = instance.borrow();
+            let snapshot = inst
+                .snapshot("running")
+                .expect("lookup snapshot")
+                .expect("running snapshot should exist");
+            let pg = snapshot
+                .property_group_composed(&pg_name)
+                .expect("lookup pg composed")
+                .expect(
+                    "property group should be visible in the \
+                     running snapshot after refresh",
+                );
+            let readback: Vec<Value> = pg
+                .property("prop")
+                .expect("lookup property")
+                .expect("property should exist")
+                .values()
+                .expect("get values")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("iterate values");
+
+            assert_eq!(readback, vec![val]);
+        }
+    });
+}
+
+/// Set a property at the service level and verify visibility: visible
+/// at the service level, not visible via instance direct-attach, but
+/// visible via instance composed view and via the "running" snapshot
+/// (only after refresh).
+#[test]
+fn service_property_composed_visibility() {
+    let isolated =
+        IsolatedConfigd::builder("test-svc").unwrap().build().unwrap();
+    let scf = Scf::connect_isolated(&isolated).unwrap();
+    let scope = scf.scope_local().unwrap();
+    let service =
+        RefCell::new(scope.service("test-svc").unwrap().unwrap());
+
+    let pg_counter = AtomicU32::new(0);
+
+    proptest!(|(val: Value)| {
+        let n = pg_counter.fetch_add(1, Ordering::Relaxed);
+        let pg_name = format!("svpg{n}");
+
+        // Write phase: add a property group at the service level.
+        {
+            let mut svc = service.borrow_mut();
+            let mut pg = svc
+                .add_property_group(
+                    &pg_name,
+                    "application",
+                    AddPropertyGroupFlags::Persistent,
+                )
+                .expect("add property group to service");
+
+            let tx = pg.transaction().expect("create transaction");
+            let mut tx = tx.start().expect("start transaction");
+            tx.property_new("prop", val.as_value_ref())
+                .expect("property_new");
+            let result = tx.commit().expect("commit");
+            assert_matches!(
+                result, TransactionCommitResult::Success(_),
+                "commit should succeed",
+            );
+        }
+
+        // The property group should be readable at the service level,
+        // should NOT be visible via instance direct-attach, but SHOULD
+        // be visible via instance composed view.
+        {
+            let svc = service.borrow();
+
+            let pg = svc
+                .property_group_direct(&pg_name)
+                .expect("lookup service pg")
+                .expect("pg should exist on service");
+            let readback: Vec<Value> = pg
+                .property("prop")
+                .expect("lookup property")
+                .expect("property should exist")
+                .values()
+                .expect("get values")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("iterate values");
+            assert_eq!(readback, vec![val.clone()]);
+
+            let inst = svc
+                .instance("default")
+                .expect("lookup instance")
+                .expect("instance should exist");
+
+            let pg = inst
+                .property_group_direct(&pg_name)
+                .expect("lookup instance direct pg");
+            assert!(
+                pg.is_none(),
+                "service-level pg {pg_name} should not be visible \
+                 via instance direct-attach",
+            );
+
+            let pg = inst
+                .property_group_composed(&pg_name)
+                .expect("lookup instance composed pg")
+                .expect(
+                    "service-level pg should be visible via \
+                     instance composed view",
+                );
+            let readback: Vec<Value> = pg
+                .property("prop")
+                .expect("lookup property")
+                .expect("property should exist")
+                .values()
+                .expect("get values")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("iterate values");
+            assert_eq!(readback, vec![val.clone()]);
+        }
+
+        // NOT visible via the "running" snapshot before refresh.
+        {
+            let svc = service.borrow();
+            let inst = svc
+                .instance("default")
+                .expect("lookup instance")
+                .expect("instance should exist");
+            let snapshot = inst
+                .snapshot("running")
+                .expect("lookup snapshot")
+                .expect("running snapshot should exist");
+            let pg = snapshot
+                .property_group_composed(&pg_name)
+                .expect("lookup snapshot pg");
+            assert!(
+                pg.is_none(),
+                "service-level pg {pg_name} should not be visible \
+                 in the running snapshot before refresh",
+            );
+        }
+
+        // Refresh the instance.
+        {
+            let svc = service.borrow();
+            let inst = svc
+                .instance("default")
+                .expect("lookup instance")
+                .expect("instance should exist");
+            inst.refresh().expect("refresh");
+        }
+
+        // After refresh, visible via the "running" snapshot.
+        {
+            let svc = service.borrow();
+            let inst = svc
+                .instance("default")
+                .expect("lookup instance")
+                .expect("instance should exist");
+            let snapshot = inst
+                .snapshot("running")
+                .expect("lookup snapshot")
+                .expect("running snapshot should exist");
+            let pg = snapshot
+                .property_group_composed(&pg_name)
+                .expect("lookup snapshot pg")
+                .expect(
+                    "service-level pg should be visible in the \
+                     running snapshot after refresh",
+                );
+            let readback: Vec<Value> = pg
+                .property("prop")
+                .expect("lookup property")
+                .expect("property should exist")
+                .values()
+                .expect("get values")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("iterate values");
+            assert_eq!(readback, vec![val]);
+        }
+    });
+}
+
+/// Add a property group, verify it exists, delete it, verify it is
+/// gone, then delete again and verify the `DoesNotExist` result.
+#[test]
+fn delete_property_group() {
+    let isolated =
+        IsolatedConfigd::builder("test-svc").unwrap().build().unwrap();
+    let scf = Scf::connect_isolated(&isolated).unwrap();
+    let scope = scf.scope_local().unwrap();
+    let service = scope.service("test-svc").unwrap().unwrap();
+    let instance =
+        RefCell::new(service.instance("default").unwrap().unwrap());
+
+    let pg_counter = AtomicU32::new(0);
+
+    proptest!(|(val: Value)| {
+        let n = pg_counter.fetch_add(1, Ordering::Relaxed);
+        let pg_name = format!("dpg{n}");
+
+        // Add a property group and write a value into it.
+        {
+            let mut inst = instance.borrow_mut();
+            let mut pg = inst
+                .add_property_group(
+                    &pg_name,
+                    "application",
+                    AddPropertyGroupFlags::Persistent,
+                )
+                .expect("add property group");
+
+            let tx = pg.transaction().expect("create transaction");
+            let mut tx = tx.start().expect("start transaction");
+            tx.property_new("prop", val.as_value_ref())
+                .expect("property_new");
+            let result = tx.commit().expect("commit");
+            assert_matches!(
+                result, TransactionCommitResult::Success(_),
+                "commit should succeed",
+            );
+        }
+
+        // Verify the property group and its property exist.
+        {
+            let inst = instance.borrow();
+            let pg = inst
+                .property_group_direct(&pg_name)
+                .expect("lookup pg")
+                .expect("pg should exist");
+            let readback: Vec<Value> = pg
+                .property("prop")
+                .expect("lookup property")
+                .expect("property should exist")
+                .values()
+                .expect("get values")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("iterate values");
+            assert_eq!(readback, vec![val]);
+        }
+
+        // Delete the property group.
+        {
+            let mut inst = instance.borrow_mut();
+            let result = inst
+                .delete_property_group(&pg_name)
+                .expect("delete property group");
+            assert_eq!(result, DeletePropertyGroupResult::Deleted);
+        }
+
+        // The property group should no longer exist.
+        {
+            let inst = instance.borrow();
+            let pg = inst
+                .property_group_direct(&pg_name)
+                .expect("lookup pg after delete");
+            assert!(
+                pg.is_none(),
+                "pg {pg_name} should not exist after deletion",
+            );
+        }
+
+        // Deleting again should return DoesNotExist.
+        {
+            let mut inst = instance.borrow_mut();
+            let result = inst
+                .delete_property_group(&pg_name)
+                .expect("delete property group again");
+            assert_eq!(result, DeletePropertyGroupResult::DoesNotExist);
+        }
+    });
+}
+
+/// Start a transaction, then modify the same property group through a
+/// second handle before committing. The commit should return
+/// `OutOfDate`.
+#[test]
+fn transaction_commit_out_of_date() {
+    let isolated =
+        IsolatedConfigd::builder("test-svc").unwrap().build().unwrap();
+    let scf = Scf::connect_isolated(&isolated).unwrap();
+    let scope = scf.scope_local().unwrap();
+    let service = scope.service("test-svc").unwrap().unwrap();
+    let instance =
+        RefCell::new(service.instance("default").unwrap().unwrap());
+
+    let pg_counter = AtomicU32::new(0);
+
+    proptest!(|(val: Value)| {
+        let n = pg_counter.fetch_add(1, Ordering::Relaxed);
+        let pg_name = format!("odpg{n}");
+
+        // Create a property group with an initial value.
+        {
+            let mut inst = instance.borrow_mut();
+            let mut pg = inst
+                .add_property_group(
+                    &pg_name,
+                    "application",
+                    AddPropertyGroupFlags::Persistent,
+                )
+                .expect("add property group");
+
+            let tx = pg.transaction().expect("create transaction");
+            let mut tx = tx.start().expect("start transaction");
+            tx.property_new("prop", val.as_value_ref())
+                .expect("property_new");
+            let result = tx.commit().expect("commit");
+            assert_matches!(
+                result, TransactionCommitResult::Success(_),
+                "initial commit should succeed",
+            );
+        }
+
+        // Start a transaction, then concurrently modify the property
+        // group through a separate handle before committing. The
+        // commit should return OutOfDate.
+        {
+            let inst = instance.borrow();
+            let mut pg = inst
+                .property_group_direct(&pg_name)
+                .expect("lookup pg")
+                .expect("pg should exist");
+
+            let tx = pg.transaction().expect("create transaction");
+            let mut tx = tx.start().expect("start transaction");
+            tx.property_ensure("prop", val.as_value_ref())
+                .expect("property_ensure");
+
+            // Modify the same property group through a second instance
+            // handle obtained directly from the service. This bumps
+            // the property group's version.
+            {
+                let inst2 = service
+                    .instance("default")
+                    .expect("lookup instance")
+                    .expect("instance should exist");
+                let mut pg2 = inst2
+                    .property_group_direct(&pg_name)
+                    .expect("lookup pg")
+                    .expect("pg should exist");
+                let tx2 = pg2.transaction().expect("create transaction");
+                let mut tx2 = tx2.start().expect("start transaction");
+                tx2.property_ensure("prop", val.as_value_ref())
+                    .expect("property_ensure");
+                let result = tx2.commit().expect("commit");
+                assert_matches!(
+                    result, TransactionCommitResult::Success(_),
+                    "concurrent commit should succeed",
+                );
+            }
+
+            // The original transaction should now be out of date.
+            let result = tx.commit().expect("commit");
+            assert_matches!(
+                result, TransactionCommitResult::OutOfDate(_),
+                "commit should be out of date after concurrent \
+                 modification",
+            );
         }
     });
 }
