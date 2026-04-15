@@ -268,7 +268,22 @@ impl LibscfError {
     }
 
     pub(crate) fn from_ret(ret: libc::c_int) -> Result<(), Self> {
-        if ret == 0 { Ok(()) } else { Err(Self::last()) }
+        if ret == 0 {
+            Ok(())
+        } else {
+            // Some libscf functions return 1 to indicate special results (e.g.,
+            // `scf_iter_next_*()` returns 0 for "success, no items left" and 1
+            // for "success, got next item"). Assert that _this_ function is not
+            // called with those special values. This is `debug_assert!()`
+            // because we don't want to crash our caller and should catch any
+            // misuse in tests.
+            debug_assert!(
+                ret < 0,
+                "LibscfError::from_ret() called with non-zero, \
+                 non-negative value {ret}"
+            );
+            Err(Self::last())
+        }
     }
 
     pub(crate) fn from_ssize(ret: libc::ssize_t) -> Result<usize, Self> {
@@ -444,6 +459,16 @@ pub enum SingleValueError {
 
     #[error("failed to get single value")]
     IterError(#[from] IterError),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum UpdatePropertyGroupError {
+    #[error("failed to update property group `{description}`")]
+    Failed {
+        description: Box<str>,
+        #[source]
+        err: LibscfError,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]

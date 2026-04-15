@@ -21,6 +21,7 @@ test-strategy = { version = "0.4.5", optional = true }
 
 [dev-dependencies]
 anyhow = "1.0"
+assert_matches  = "1.5.0"
 camino = "1.2.2"
 camino-tempfile = "1.4.1"
 clap = { version = "4.6", features = ["derive"] }
@@ -35,6 +36,10 @@ name = "set-property-values"
 
 [[example]]
 name = "run-isolated-configd"
+required-features = ["testing"]
+
+[[test]]
+name = "transaction"
 required-features = ["testing"]
 
 [features]

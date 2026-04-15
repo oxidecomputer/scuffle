@@ -19,6 +19,7 @@ use crate::error::LibscfError;
 use crate::error::LookupError;
 use crate::error::ScfEntity;
 use crate::error::TransactionError;
+use crate::error::UpdatePropertyGroupError;
 use crate::iter::ScfIter;
 use crate::iter::ScfUninitializedIter;
 use crate::scf::ScfObject;
@@ -52,6 +53,15 @@ pub enum PropertyGroupDirect {}
 /// [`HasComposedPropertyGroups`]: `crate::HasComposedPropertyGroups`
 #[derive(Debug)]
 pub enum PropertyGroupComposed {}
+
+/// Result of updating a property group against its latest version.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum PropertyGroupUpdateResult {
+    /// The property group was updated.
+    Updated,
+    /// The property group was not updated.
+    AlreadyUpToDate,
+}
 
 /// Handle to an SMF property group.
 ///
@@ -167,6 +177,21 @@ impl<'a, St> PropertyGroup<'a, St> {
             kind: IterErrorKind::Init(err),
         })?;
         Ok(Properties::new(self, iter))
+    }
+
+    /// Ensure that this property group handle is attached to the most recent
+    /// version of this property group.
+    pub fn update(
+        &mut self,
+    ) -> Result<PropertyGroupUpdateResult, UpdatePropertyGroupError> {
+        match unsafe { libscf_sys::scf_pg_update(self.handle.as_mut_ptr()) } {
+            0 => Ok(PropertyGroupUpdateResult::AlreadyUpToDate),
+            1 => Ok(PropertyGroupUpdateResult::Updated),
+            _ => Err(UpdatePropertyGroupError::Failed {
+                description: self.error_path(),
+                err: LibscfError::last(),
+            }),
+        }
     }
 }
 
