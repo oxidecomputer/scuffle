@@ -39,6 +39,10 @@ name = "run-isolated-configd"
 required-features = ["testing"]
 
 [[test]]
+name = "property-group-type"
+required-features = ["testing"]
+
+[[test]]
 name = "transaction"
 required-features = ["testing"]
 

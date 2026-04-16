@@ -7,8 +7,8 @@ use std::sync::LazyLock;
 pub(crate) static SCF_LIMIT_MAX_NAME_LENGTH: LazyLock<usize> =
     LazyLock::new(|| scf_limit(libscf_sys::SCF_LIMIT_MAX_NAME_LENGTH));
 
-pub(crate) static SCF_LIMIT_MAX_FMRI_LENGTH: LazyLock<usize> =
-    LazyLock::new(|| scf_limit(libscf_sys::SCF_LIMIT_MAX_FMRI_LENGTH));
+pub(crate) static SCF_LIMIT_MAX_PG_TYPE_LENGTH: LazyLock<usize> =
+    LazyLock::new(|| scf_limit(libscf_sys::SCF_LIMIT_MAX_PG_TYPE_LENGTH));
 
 pub(crate) static SCF_LIMIT_MAX_VALUE_LENGTH: LazyLock<usize> =
     LazyLock::new(|| scf_limit(libscf_sys::SCF_LIMIT_MAX_VALUE_LENGTH));

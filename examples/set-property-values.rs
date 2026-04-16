@@ -3,10 +3,12 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use anyhow::Context;
+use anyhow::anyhow;
 use anyhow::bail;
 use clap::Parser;
 use scuffle::AddPropertyGroupFlags;
 use scuffle::EditPropertyGroups;
+use scuffle::PropertyGroupType;
 use scuffle::Scf;
 use scuffle::TransactionCommitResult;
 use scuffle::Value;
@@ -19,13 +21,21 @@ struct Args {
     #[arg(long)]
     instance: Option<String>,
     property_group: String,
-    /// Property group type (default: "application")
-    #[arg(long, default_value = "application")]
-    pg_type: String,
+    /// Property group type
+    #[arg(
+        long,
+        default_value_t = PropertyGroupType::Application,
+        value_parser = parse_pg_type)]
+    pg_type: PropertyGroupType,
     property: String,
     /// Value in the form type:value (e.g., "astring:hello", "count:42",
     /// "boolean:true", "integer:-1")
     value: String,
+}
+
+fn parse_pg_type(s: &str) -> anyhow::Result<PropertyGroupType> {
+    PropertyGroupType::new(s)
+        .ok_or_else(|| anyhow!("invalid property group type: {s}"))
 }
 
 fn parse_value(s: &str) -> anyhow::Result<Value> {
@@ -50,7 +60,7 @@ fn run(
     target: &mut impl EditPropertyGroups,
     name: &str,
     pg_name: &str,
-    pg_type: &str,
+    pg_type: PropertyGroupType,
     property: &str,
     value: &Value,
 ) -> anyhow::Result<()> {
@@ -108,7 +118,7 @@ fn main() -> anyhow::Result<()> {
             &mut inst,
             &name,
             &args.property_group,
-            &args.pg_type,
+            args.pg_type,
             &args.property,
             &value,
         )?;
@@ -118,7 +128,7 @@ fn main() -> anyhow::Result<()> {
             &mut service,
             &name,
             &args.property_group,
-            &args.pg_type,
+            args.pg_type,
             &args.property,
             &value,
         )?;

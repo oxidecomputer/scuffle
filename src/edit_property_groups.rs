@@ -5,6 +5,7 @@
 use crate::HasDirectPropertyGroups;
 use crate::PropertyGroup;
 use crate::PropertyGroupDirect;
+use crate::PropertyGroupType;
 use crate::Scf;
 use crate::error::AddPropertyGroupError;
 use crate::error::DeletePropertyGroupError;
@@ -50,14 +51,14 @@ pub trait EditPropertyGroups: HasDirectPropertyGroups + ErrorPath {
     fn add_property_group(
         &mut self,
         name: &str,
-        pg_type: &str,
+        pg_type: PropertyGroupType,
         flags: AddPropertyGroupFlags,
     ) -> Result<PropertyGroup<'_, PropertyGroupDirect>, AddPropertyGroupError>;
 
     fn ensure_property_group(
         &mut self,
         name: &str,
-        pg_type: &str,
+        pg_type: PropertyGroupType,
         flags: AddPropertyGroupFlags,
     ) -> Result<PropertyGroup<'_, PropertyGroupDirect>, AddPropertyGroupError>
     {
@@ -114,7 +115,6 @@ pub trait EditPropertyGroups: HasDirectPropertyGroups + ErrorPath {
 
 pub(crate) struct AddPropertyGroupArgs<'a> {
     pub(crate) name: Utf8CString,
-    pub(crate) pg_type: Utf8CString,
     pub(crate) handle: ScfObject<'a, libscf_sys::scf_propertygroup_t>,
     pub(crate) flags: u32,
 }
@@ -124,21 +124,12 @@ impl<'a> AddPropertyGroupArgs<'a> {
         scf: &'a Scf<'_>,
         parent: &P,
         name: &str,
-        pg_type: &str,
         flags: AddPropertyGroupFlags,
     ) -> Result<Self, AddPropertyGroupError> {
         let name = Utf8CString::from_str(name).map_err(|err| {
             AddPropertyGroupError::InvalidName {
                 parent: parent.error_path(),
                 name: Box::from(name),
-                err,
-            }
-        })?;
-
-        let pg_type = Utf8CString::from_str(pg_type).map_err(|err| {
-            AddPropertyGroupError::InvalidType {
-                parent: parent.error_path(),
-                pg_type: Box::from(pg_type),
                 err,
             }
         })?;
@@ -152,6 +143,6 @@ impl<'a> AddPropertyGroupArgs<'a> {
             }
         };
 
-        Ok(Self { name, pg_type, handle, flags })
+        Ok(Self { name, handle, flags })
     }
 }

@@ -74,16 +74,15 @@ where
 }
 
 /// Run a closure with access to a thread-local buffer sized to
-/// `scf_limit(SCF_LIMIT_MAX_FMRI_LENGTH) + 1`.
+/// `scf_limit(SCF_LIMIT_MAX_PG_TYPE_LENGTH) + 1`.
 ///
 /// This function is not reentrant with itself nor with the other `with_buf_*`
 /// functions in this module.
-#[allow(dead_code)] // TODO remove once we write fmri() methods
-pub(crate) fn with_scf_fmri_buf<F, T>(f: F) -> T
+pub(crate) fn with_scf_pg_type_buf<F, T>(f: F) -> T
 where
     F: FnOnce(&mut [u8]) -> T,
 {
-    with_buf(f, *limit::SCF_LIMIT_MAX_FMRI_LENGTH + 1)
+    with_buf(f, *limit::SCF_LIMIT_MAX_PG_TYPE_LENGTH + 1)
 }
 
 fn with_buf<F, T>(f: F, max_len: usize) -> T

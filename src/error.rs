@@ -37,6 +37,7 @@ pub enum ScfEntity {
     Service,
     Snapshot,
     PropertyGroup,
+    PropertyGroupType,
     Property,
     Scope,
     Transaction,
@@ -54,6 +55,7 @@ impl fmt::Display for ScfEntity {
             Self::Service => "service",
             Self::Snapshot => "snapshot",
             Self::PropertyGroup => "property group",
+            Self::PropertyGroupType => "property group type",
             Self::Property => "property",
             Self::Scope => "scope",
             Self::Transaction => "transaction",
@@ -472,6 +474,19 @@ pub enum UpdatePropertyGroupError {
 }
 
 #[derive(Debug, thiserror::Error)]
+pub enum PropertyGroupTypeError {
+    #[error("failed to get type of property group `{description}` from libscf")]
+    GetType {
+        description: Box<str>,
+        #[source]
+        err: ScfStringError,
+    },
+
+    #[error("unknown type for property group `{description}`: `{type_}`")]
+    UnknownType { description: Box<str>, type_: Box<str> },
+}
+
+#[derive(Debug, thiserror::Error)]
 pub enum AddPropertyGroupError {
     #[error(transparent)]
     HandleCreate(#[from] HandleCreateError),
@@ -480,14 +495,6 @@ pub enum AddPropertyGroupError {
     InvalidName {
         parent: Box<str>,
         name: Box<str>,
-        #[source]
-        err: NulError,
-    },
-
-    #[error("invalid property group type {pg_type:?} in `{parent}`")]
-    InvalidType {
-        parent: Box<str>,
-        pg_type: Box<str>,
         #[source]
         err: NulError,
     },

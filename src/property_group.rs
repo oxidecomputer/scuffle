@@ -11,12 +11,15 @@ use crate::Service;
 use crate::Snapshot;
 use crate::Transaction;
 use crate::TransactionReset;
+use crate::buf::scf_get_string;
+use crate::buf::with_scf_pg_type_buf;
 use crate::error::DeletePropertyGroupError;
 use crate::error::ErrorPath;
 use crate::error::IterError;
 use crate::error::IterErrorKind;
 use crate::error::LibscfError;
 use crate::error::LookupError;
+use crate::error::PropertyGroupTypeError;
 use crate::error::ScfEntity;
 use crate::error::TransactionError;
 use crate::error::UpdatePropertyGroupError;
@@ -26,7 +29,69 @@ use crate::scf::ScfObject;
 use crate::utf8cstring::PropertyFmri;
 use crate::utf8cstring::PropertyGroupFmri;
 use crate::utf8cstring::Utf8CString;
+use std::ffi::CStr;
+use std::fmt;
 use std::marker::PhantomData;
+
+/// Property group types.
+///
+/// The underlying values for these variants map to the corresponding
+/// `SCF_GROUP_*` constants in `libscf.h.`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(any(test, feature = "testing"), derive(test_strategy::Arbitrary))]
+pub enum PropertyGroupType {
+    Application,
+    Framework,
+    Dependency,
+    Method,
+    Template,
+    TemplatePgPattern,
+    TemplatePropPattern,
+}
+
+impl fmt::Display for PropertyGroupType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            Self::Application => "application",
+            Self::Framework => "framework",
+            Self::Dependency => "dependency",
+            Self::Method => "method",
+            Self::Template => "template",
+            Self::TemplatePgPattern => "template_pg_pattern",
+            Self::TemplatePropPattern => "template_prop_pattern",
+        };
+        s.fmt(f)
+    }
+}
+
+impl PropertyGroupType {
+    pub fn new(name: &str) -> Option<Self> {
+        let pg_type = match name {
+            "application" => Self::Application,
+            "framework" => Self::Framework,
+            "dependency" => Self::Dependency,
+            "method" => Self::Method,
+            "template" => Self::Template,
+            "template_pg_pattern" => Self::TemplatePgPattern,
+            "template_prop_pattern" => Self::TemplatePropPattern,
+            _ => return None,
+        };
+        Some(pg_type)
+    }
+
+    pub(crate) fn as_c_str(&self) -> &'static CStr {
+        let s = match self {
+            Self::Application => b"application\0" as &[u8],
+            Self::Framework => b"framework\0",
+            Self::Dependency => b"dependency\0",
+            Self::Method => b"method\0",
+            Self::Template => b"template\0",
+            Self::TemplatePgPattern => b"template_pg_pattern\0",
+            Self::TemplatePropPattern => b"template_prop_pattern\0",
+        };
+        CStr::from_bytes_with_nul(s).expect("string constants are valid CStrs")
+    }
+}
 
 /// Type-state marker for a [`PropertyGroup`] that is directly attached to an
 /// [`Instance`] or [`Service`].
@@ -158,6 +223,34 @@ impl<'a, St> PropertyGroup<'a, St> {
     /// instance or snapshot, that information is _not_ included in the FMRI.
     pub fn fmri(&self) -> &str {
         self.fmri.as_str()
+    }
+
+    /// Get the type of this property group.
+    pub fn type_(&self) -> Result<PropertyGroupType, PropertyGroupTypeError> {
+        let type_string = with_scf_pg_type_buf(|buf| {
+            scf_get_string(
+                ScfEntity::PropertyGroupType,
+                buf,
+                |buf, buf_len| unsafe {
+                    libscf_sys::scf_pg_get_type(
+                        self.handle.as_ptr(),
+                        buf,
+                        buf_len,
+                    )
+                },
+            )
+        })
+        .map_err(|err| PropertyGroupTypeError::GetType {
+            description: self.error_path(),
+            err,
+        })?;
+
+        PropertyGroupType::new(type_string.as_str()).ok_or_else(|| {
+            PropertyGroupTypeError::UnknownType {
+                description: self.error_path(),
+                type_: type_string.into_string().into_boxed_str(),
+            }
+        })
     }
 
     pub(crate) fn property_fmri(&self, name: &Utf8CString) -> PropertyFmri {

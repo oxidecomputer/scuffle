@@ -11,6 +11,7 @@ use scuffle::DeletePropertyGroupResult;
 use scuffle::EditPropertyGroups;
 use scuffle::HasComposedPropertyGroups;
 use scuffle::HasDirectPropertyGroups;
+use scuffle::PropertyGroupType;
 use scuffle::PropertyGroupUpdateResult;
 use scuffle::Scf;
 use scuffle::TransactionCommitResult;
@@ -30,8 +31,7 @@ fn transaction_property_roundtrip() {
     let scf = Scf::connect_isolated(&isolated).unwrap();
     let scope = scf.scope_local().unwrap();
     let service = scope.service("test-svc").unwrap().unwrap();
-    let instance =
-        RefCell::new(service.instance("default").unwrap().unwrap());
+    let instance = RefCell::new(service.instance("default").unwrap().unwrap());
 
     let pg_counter = AtomicU32::new(0);
 
@@ -45,7 +45,7 @@ fn transaction_property_roundtrip() {
             let mut pg = inst
                 .add_property_group(
                     &pg_name,
-                    "application",
+                    PropertyGroupType::Application,
                     AddPropertyGroupFlags::Persistent,
                 )
                 .expect("add property group");
@@ -92,8 +92,7 @@ fn transaction_multi_value_roundtrip() {
     let scf = Scf::connect_isolated(&isolated).unwrap();
     let scope = scf.scope_local().unwrap();
     let service = scope.service("test-svc").unwrap().unwrap();
-    let instance =
-        RefCell::new(service.instance("default").unwrap().unwrap());
+    let instance = RefCell::new(service.instance("default").unwrap().unwrap());
 
     let pg_counter = AtomicU32::new(0);
 
@@ -113,7 +112,7 @@ fn transaction_multi_value_roundtrip() {
             let mut pg = inst
                 .add_property_group(
                     &pg_name,
-                    "application",
+                    PropertyGroupType::Application,
                     AddPropertyGroupFlags::Persistent,
                 )
                 .expect("add property group");
@@ -162,8 +161,7 @@ fn transaction_property_ensure_overwrites() {
     let scf = Scf::connect_isolated(&isolated).unwrap();
     let scope = scf.scope_local().unwrap();
     let service = scope.service("test-svc").unwrap().unwrap();
-    let instance =
-        RefCell::new(service.instance("default").unwrap().unwrap());
+    let instance = RefCell::new(service.instance("default").unwrap().unwrap());
 
     let pg_counter = AtomicU32::new(0);
 
@@ -173,9 +171,7 @@ fn transaction_property_ensure_overwrites() {
         let v2_strategy = match kind {
             ValueKind::Bool => any::<bool>().prop_map(Value::Bool).boxed(),
             ValueKind::Count => any::<u64>().prop_map(Value::Count).boxed(),
-            ValueKind::Integer => {
-                any::<i64>().prop_map(Value::Integer).boxed()
-            }
+            ValueKind::Integer => any::<i64>().prop_map(Value::Integer).boxed(),
             _ => {
                 // For all other kinds, just generate another arbitrary
                 // Value and filter to the same kind.
@@ -198,7 +194,7 @@ fn transaction_property_ensure_overwrites() {
             let mut pg = inst
                 .add_property_group(
                     &pg_name,
-                    "application",
+                    PropertyGroupType::Application,
                     AddPropertyGroupFlags::Persistent,
                 )
                 .expect("add property group");
@@ -264,8 +260,7 @@ fn transaction_snapshot_visibility_after_refresh() {
     let scf = Scf::connect_isolated(&isolated).unwrap();
     let scope = scf.scope_local().unwrap();
     let service = scope.service("test-svc").unwrap().unwrap();
-    let instance =
-        RefCell::new(service.instance("default").unwrap().unwrap());
+    let instance = RefCell::new(service.instance("default").unwrap().unwrap());
 
     let pg_counter = AtomicU32::new(0);
 
@@ -279,7 +274,7 @@ fn transaction_snapshot_visibility_after_refresh() {
             let mut pg = inst
                 .add_property_group(
                     &pg_name,
-                    "application",
+                    PropertyGroupType::Application,
                     AddPropertyGroupFlags::Persistent,
                 )
                 .expect("add property group");
@@ -358,8 +353,7 @@ fn service_property_composed_visibility() {
         IsolatedConfigd::builder("test-svc").unwrap().build().unwrap();
     let scf = Scf::connect_isolated(&isolated).unwrap();
     let scope = scf.scope_local().unwrap();
-    let service =
-        RefCell::new(scope.service("test-svc").unwrap().unwrap());
+    let service = RefCell::new(scope.service("test-svc").unwrap().unwrap());
 
     let pg_counter = AtomicU32::new(0);
 
@@ -373,7 +367,7 @@ fn service_property_composed_visibility() {
             let mut pg = svc
                 .add_property_group(
                     &pg_name,
-                    "application",
+                    PropertyGroupType::Application,
                     AddPropertyGroupFlags::Persistent,
                 )
                 .expect("add property group to service");
@@ -512,8 +506,7 @@ fn delete_property_group() {
     let scf = Scf::connect_isolated(&isolated).unwrap();
     let scope = scf.scope_local().unwrap();
     let service = scope.service("test-svc").unwrap().unwrap();
-    let instance =
-        RefCell::new(service.instance("default").unwrap().unwrap());
+    let instance = RefCell::new(service.instance("default").unwrap().unwrap());
 
     let pg_counter = AtomicU32::new(0);
 
@@ -527,7 +520,7 @@ fn delete_property_group() {
             let mut pg = inst
                 .add_property_group(
                     &pg_name,
-                    "application",
+                    PropertyGroupType::Application,
                     AddPropertyGroupFlags::Persistent,
                 )
                 .expect("add property group");
@@ -603,8 +596,7 @@ fn transaction_commit_out_of_date() {
     let scf = Scf::connect_isolated(&isolated).unwrap();
     let scope = scf.scope_local().unwrap();
     let service = scope.service("test-svc").unwrap().unwrap();
-    let instance =
-        RefCell::new(service.instance("default").unwrap().unwrap());
+    let instance = RefCell::new(service.instance("default").unwrap().unwrap());
 
     let pg_counter = AtomicU32::new(0);
 
@@ -618,7 +610,7 @@ fn transaction_commit_out_of_date() {
             let mut pg = inst
                 .add_property_group(
                     &pg_name,
-                    "application",
+                    PropertyGroupType::Application,
                     AddPropertyGroupFlags::Persistent,
                 )
                 .expect("add property group");

@@ -9,6 +9,7 @@ use crate::HasDirectPropertyGroups;
 use crate::PropertyGroup;
 use crate::PropertyGroupComposed;
 use crate::PropertyGroupDirect;
+use crate::PropertyGroupType;
 use crate::PropertyGroups;
 use crate::Scf;
 use crate::Service;
@@ -220,18 +221,12 @@ impl EditPropertyGroups for Instance<'_> {
     fn add_property_group(
         &mut self,
         name: &str,
-        pg_type: &str,
+        pg_type: PropertyGroupType,
         flags: AddPropertyGroupFlags,
     ) -> Result<PropertyGroup<'_, PropertyGroupDirect>, AddPropertyGroupError>
     {
-        let AddPropertyGroupArgs { name, pg_type, mut handle, flags } =
-            AddPropertyGroupArgs::validate(
-                self.scf(),
-                self,
-                name,
-                pg_type,
-                flags,
-            )?;
+        let AddPropertyGroupArgs { name, mut handle, flags } =
+            AddPropertyGroupArgs::validate(self.scf(), self, name, flags)?;
         LibscfError::from_ret(unsafe {
             libscf_sys::scf_instance_add_pg(
                 self.handle.as_mut_ptr(),

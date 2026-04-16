@@ -35,6 +35,7 @@ pub use property::Property;
 pub use property_group::PropertyGroup;
 pub use property_group::PropertyGroupComposed;
 pub use property_group::PropertyGroupDirect;
+pub use property_group::PropertyGroupType;
 pub use property_group::PropertyGroupUpdateResult;
 pub use property_group::PropertyGroups;
 pub use scf::Scf;
