@@ -43,6 +43,10 @@ name = "property-group-type"
 required-features = ["testing"]
 
 [[test]]
+name = "scf"
+required-features = ["testing"]
+
+[[test]]
 name = "transaction"
 required-features = ["testing"]
 
