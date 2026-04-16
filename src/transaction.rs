@@ -113,6 +113,11 @@ impl<'a, 'pg, St> Transaction<'a, 'pg, St> {
         Transaction { inner: self.inner, _state: PhantomData }
     }
 
+    /// Returns true if this transaction has no entries.
+    pub fn is_empty(&self) -> bool {
+        self.inner.entries.is_empty()
+    }
+
     fn scf(&self) -> &'a Scf<'a> {
         self.inner.property_group.scf()
     }

@@ -59,8 +59,10 @@ fn transaction_property_roundtrip() {
 
             let tx = pg.transaction().expect("create transaction");
             let mut tx = tx.start().expect("start transaction");
+            assert!(tx.is_empty());
             tx.property_new("prop", val.as_value_ref())
                 .expect("property_new");
+            assert!(!tx.is_empty());
             let result = tx.commit().expect("commit");
             assert_matches!(
                 result, TransactionCommitResult::Success(_),
@@ -126,12 +128,14 @@ fn transaction_multi_value_roundtrip() {
 
             let tx = pg.transaction().expect("create transaction");
             let mut tx = tx.start().expect("start transaction");
+            assert!(tx.is_empty());
             tx.property_new_multiple(
                 "prop",
                 ValueKind::Count,
                 values.iter().map(|v| v.as_value_ref()),
             )
             .expect("property_new_multiple");
+            assert!(!tx.is_empty());
             let result = tx.commit().expect("commit");
             assert_matches!(
                 result, TransactionCommitResult::Success(_),
@@ -757,12 +761,15 @@ fn transaction_commit_out_of_date() {
             }
 
             // The original transaction should now be out of date.
+            assert!(!tx.is_empty());
             let result = tx.commit().expect("commit");
-            assert_matches!(
-                result, TransactionCommitResult::OutOfDate(_),
+            let stale_tx = assert_matches!(
+                result, TransactionCommitResult::OutOfDate(tx) => tx,
                 "commit should be out of date after concurrent \
                  modification",
             );
+            // OutOfDate resets the transaction, clearing its entries.
+            assert!(stale_tx.is_empty());
         }
     });
 }
@@ -790,6 +797,7 @@ fn transaction_invalid_property_name() {
 
     let tx = pg.transaction().expect("create transaction");
     let mut tx = tx.start().expect("start transaction");
+    assert!(tx.is_empty());
 
     let err = tx
         .property_new("prop\0bad", ValueRef::Bool(true))
@@ -824,6 +832,9 @@ fn transaction_invalid_property_name() {
         .property_change_type("ct\0bad", ValueRef::Bool(true))
         .expect_err("should fail with InvalidName");
     assert_matches!(err, TransactionBuildError::InvalidName { .. });
+
+    // All operations failed before pushing entries; transaction is still empty.
+    assert!(tx.is_empty());
 }
 
 /// Verify that `property_new_multiple` with mismatched value kinds
@@ -847,6 +858,7 @@ fn transaction_type_mismatch() {
 
     let tx = pg.transaction().expect("create transaction");
     let mut tx = tx.start().expect("start transaction");
+    assert!(tx.is_empty());
 
     let err = tx
         .property_new_multiple(
@@ -863,6 +875,9 @@ fn transaction_type_mismatch() {
             ..
         }
     );
+
+    // Failed operation did not push an entry; transaction is still empty.
+    assert!(tx.is_empty());
 }
 
 /// Verify that `pg.update()` returns `AlreadyUpToDate` when the
@@ -944,8 +959,10 @@ fn transaction_property_delete() {
 
             let tx = pg.transaction().expect("create transaction");
             let mut tx = tx.start().expect("start transaction");
+            assert!(tx.is_empty());
             tx.property_new("prop", val.as_value_ref())
                 .expect("property_new");
+            assert!(!tx.is_empty());
             let result = tx.commit().expect("commit");
             assert_matches!(
                 result, TransactionCommitResult::Success(_),
@@ -962,7 +979,9 @@ fn transaction_property_delete() {
                 .expect("pg should exist");
             let tx = pg.transaction().expect("create transaction");
             let mut tx = tx.start().expect("start transaction");
+            assert!(tx.is_empty());
             tx.property_delete("prop").expect("property_delete");
+            assert!(!tx.is_empty());
             let result = tx.commit().expect("commit");
             assert_matches!(
                 result, TransactionCommitResult::Success(_),
@@ -1222,7 +1241,9 @@ fn transaction_reset_and_retry_after_out_of_date() {
     {
         let tx = pg.transaction().expect("create transaction");
         let mut tx = tx.start().expect("start transaction");
+        assert!(tx.is_empty());
         tx.property_new("prop", ValueRef::Count(1)).expect("property_new");
+        assert!(!tx.is_empty());
         let result = tx.commit().expect("commit");
         assert_matches!(result, TransactionCommitResult::Success(_));
     }
@@ -1234,8 +1255,10 @@ fn transaction_reset_and_retry_after_out_of_date() {
     {
         let tx = pg.transaction().expect("create transaction");
         let mut tx = tx.start().expect("start transaction");
+        assert!(tx.is_empty());
         tx.property_ensure("prop", ValueRef::Count(42))
             .expect("property_ensure");
+        assert!(!tx.is_empty());
 
         // Concurrently modify the PG through a second handle.
         {
@@ -1256,11 +1279,13 @@ fn transaction_reset_and_retry_after_out_of_date() {
         }
 
         let result = tx.commit().expect("commit");
-        assert_matches!(
+        let stale_tx = assert_matches!(
             result,
-            TransactionCommitResult::OutOfDate(_),
+            TransactionCommitResult::OutOfDate(tx) => tx,
             "commit should be out of date",
         );
+        // OutOfDate resets the transaction, clearing its entries.
+        assert!(stale_tx.is_empty());
         // Drop the stale transaction (releases &mut pg).
     }
 
@@ -1271,8 +1296,10 @@ fn transaction_reset_and_retry_after_out_of_date() {
     {
         let tx = pg.transaction().expect("create retry transaction");
         let mut tx = tx.start().expect("start retry transaction");
+        assert!(tx.is_empty());
         tx.property_ensure("prop", ValueRef::Count(42))
             .expect("property_ensure on retry");
+        assert!(!tx.is_empty());
         let result = tx.commit().expect("retry commit");
         assert_matches!(
             result,
@@ -1324,12 +1351,14 @@ fn transaction_multi_value_ensure_and_change() {
     {
         let tx = pg.transaction().expect("create transaction");
         let mut tx = tx.start().expect("start transaction");
+        assert!(tx.is_empty());
         tx.property_ensure_multiple(
             "prop",
             ValueKind::Count,
             [ValueRef::Count(1), ValueRef::Count(2), ValueRef::Count(3)],
         )
         .expect("property_ensure_multiple");
+        assert!(!tx.is_empty());
         let result = tx.commit().expect("commit");
         assert_matches!(result, TransactionCommitResult::Success(_));
     }
@@ -1359,12 +1388,14 @@ fn transaction_multi_value_ensure_and_change() {
     {
         let tx = pg.transaction().expect("create transaction");
         let mut tx = tx.start().expect("start transaction");
+        assert!(tx.is_empty());
         tx.property_ensure_multiple(
             "prop",
             ValueKind::Count,
             [ValueRef::Count(4), ValueRef::Count(5)],
         )
         .expect("property_ensure_multiple overwrite");
+        assert!(!tx.is_empty());
         let result = tx.commit().expect("commit");
         assert_matches!(result, TransactionCommitResult::Success(_));
     }
@@ -1391,12 +1422,14 @@ fn transaction_multi_value_ensure_and_change() {
     {
         let tx = pg.transaction().expect("create transaction");
         let mut tx = tx.start().expect("start transaction");
+        assert!(tx.is_empty());
         tx.property_change_multiple(
             "prop",
             ValueKind::Count,
             [ValueRef::Count(6)],
         )
         .expect("property_change_multiple");
+        assert!(!tx.is_empty());
         let result = tx.commit().expect("commit");
         assert_matches!(result, TransactionCommitResult::Success(_));
     }

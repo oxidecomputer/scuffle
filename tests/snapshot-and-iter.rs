@@ -148,9 +148,11 @@ fn property_iterator() {
 
         let tx = pg.transaction().expect("create transaction");
         let mut tx = tx.start().expect("start transaction");
+        assert!(tx.is_empty());
         tx.property_new("p1", ValueRef::Bool(true)).expect("property_new p1");
         tx.property_new("p2", ValueRef::Count(42)).expect("property_new p2");
         tx.property_new("p3", ValueRef::Integer(-1)).expect("property_new p3");
+        assert!(!tx.is_empty());
         let result = tx.commit().expect("commit");
         assert_matches!(result, TransactionCommitResult::Success(_));
     }
