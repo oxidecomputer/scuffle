@@ -47,6 +47,10 @@ name = "scf"
 required-features = ["testing"]
 
 [[test]]
+name = "snapshot-and-iter"
+required-features = ["testing"]
+
+[[test]]
 name = "transaction"
 required-features = ["testing"]
 

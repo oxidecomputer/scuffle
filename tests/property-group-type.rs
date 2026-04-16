@@ -31,7 +31,7 @@ fn property_group_type_roundtrip() {
 
     proptest!(|(pg_type: PropertyGroupType)| {
         let n = pg_counter.fetch_add(1, Ordering::Relaxed);
-        let pg_name = format!("tpg{n}");
+        let pg_name = format!("pg{n}");
 
         // Create a property group with the given type.
         {

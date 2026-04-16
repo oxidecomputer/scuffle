@@ -3,10 +3,18 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use assert_matches::assert_matches;
+use scuffle::AddPropertyGroupFlags;
+use scuffle::EditPropertyGroups;
+use scuffle::HasComposedPropertyGroups;
+use scuffle::HasDirectPropertyGroups;
+use scuffle::PropertyGroupType;
 use scuffle::Scf;
+use scuffle::error::AddPropertyGroupError;
 use scuffle::error::InstanceFromEnvError;
 use scuffle::error::InstanceFromFmriError;
 use scuffle::error::LibscfError;
+use scuffle::error::LookupError;
+use scuffle::error::ScfEntity;
 use scuffle::isolated::IsolatedConfigd;
 
 #[test]
@@ -143,4 +151,104 @@ fn self_instance_from_env() {
             assert_eq!(&*fmri, "svc:/bogus:default");
         }
     );
+}
+
+/// Verify that `add_property_group` with a NUL-containing name returns
+/// `AddPropertyGroupError::InvalidName`.
+#[test]
+fn add_property_group_invalid_name() {
+    let isolated =
+        IsolatedConfigd::builder("test-svc").unwrap().build().unwrap();
+    let scf = Scf::connect_isolated(&isolated).unwrap();
+    let scope = scf.scope_local().unwrap();
+    let service = scope.service("test-svc").unwrap().unwrap();
+    let mut instance = service.instance("default").unwrap().unwrap();
+
+    let err = instance
+        .add_property_group(
+            "bad\0name",
+            PropertyGroupType::Application,
+            AddPropertyGroupFlags::Persistent,
+        )
+        .expect_err("should fail with InvalidName");
+    assert_matches!(err, AddPropertyGroupError::InvalidName { .. });
+}
+
+/// Verify that lookup methods return `LookupError::InvalidName` when
+/// given names containing embedded NUL bytes.
+#[test]
+fn lookup_invalid_name() {
+    let isolated =
+        IsolatedConfigd::builder("test-svc").unwrap().build().unwrap();
+    let scf = Scf::connect_isolated(&isolated).unwrap();
+    let scope = scf.scope_local().unwrap();
+    let service = scope.service("test-svc").unwrap().unwrap();
+    let mut instance = service.instance("default").unwrap().unwrap();
+
+    // Scope::service with NUL
+    let err = scope
+        .service("svc\0bad")
+        .expect_err("should fail with InvalidName");
+    assert_matches!(
+        err,
+        LookupError::InvalidName { entity: ScfEntity::Service, .. }
+    );
+
+    // Service::instance with NUL
+    let err = service
+        .instance("inst\0bad")
+        .expect_err("should fail with InvalidName");
+    assert_matches!(
+        err,
+        LookupError::InvalidName { entity: ScfEntity::Instance, .. }
+    );
+
+    // Instance::snapshot with NUL
+    let err = instance
+        .snapshot("snap\0bad")
+        .expect_err("should fail with InvalidName");
+    assert_matches!(
+        err,
+        LookupError::InvalidName { entity: ScfEntity::Snapshot, .. }
+    );
+
+    // Instance::property_group_direct with NUL
+    let err = instance
+        .property_group_direct("pg\0bad")
+        .expect_err("should fail with InvalidName");
+    assert_matches!(
+        err,
+        LookupError::InvalidName {
+            entity: ScfEntity::PropertyGroup,
+            ..
+        }
+    );
+
+    // Instance::property_group_composed with NUL
+    let err = instance
+        .property_group_composed("pg\0bad")
+        .expect_err("should fail with InvalidName");
+    assert_matches!(
+        err,
+        LookupError::InvalidName {
+            entity: ScfEntity::PropertyGroup,
+            ..
+        }
+    );
+
+    // Property lookup with NUL (need a real PG first)
+    let pg = instance
+        .add_property_group(
+            "pg",
+            PropertyGroupType::Application,
+            AddPropertyGroupFlags::Persistent,
+        )
+        .expect("add property group");
+    match pg.property("prop\0bad") {
+        Err(err) => assert_matches!(
+            err,
+            LookupError::InvalidName { entity: ScfEntity::Property, .. }
+        ),
+        Ok(_) => panic!("should fail with InvalidName"),
+    }
 }

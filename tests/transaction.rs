@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use assert_matches::assert_matches;
+use proptest::prelude::BoxedStrategy;
 use proptest::prelude::any;
 use proptest::proptest;
 use proptest::strategy::Strategy;
@@ -17,6 +18,10 @@ use scuffle::Scf;
 use scuffle::TransactionCommitResult;
 use scuffle::Value;
 use scuffle::ValueKind;
+use scuffle::ValueRef;
+use scuffle::error::LookupError;
+use scuffle::error::SingleValueError;
+use scuffle::error::TransactionError;
 use scuffle::isolated::IsolatedConfigd;
 use std::cell::RefCell;
 use std::sync::atomic::AtomicU32;
@@ -105,7 +110,7 @@ fn transaction_multi_value_roundtrip() {
 
     proptest!(|(values in strategy)| {
         let n = pg_counter.fetch_add(1, Ordering::Relaxed);
-        let pg_name = format!("mpg{n}");
+        let pg_name = format!("pg{n}");
 
         {
             let mut inst = instance.borrow_mut();
@@ -152,6 +157,30 @@ fn transaction_multi_value_roundtrip() {
     });
 }
 
+// proptest helper: strategy that generates a pair of `Value`s of the same kind
+fn strategy_same_kind_values() -> BoxedStrategy<(Value, Value)> {
+    any::<Value>()
+        .prop_flat_map(|v1| {
+            let kind = v1.kind();
+            let v2_strategy = match kind {
+                ValueKind::Bool => any::<bool>().prop_map(Value::Bool).boxed(),
+                ValueKind::Count => any::<u64>().prop_map(Value::Count).boxed(),
+                ValueKind::Integer => {
+                    any::<i64>().prop_map(Value::Integer).boxed()
+                }
+                _ => {
+                    // For all other kinds, just generate another arbitrary
+                    // Value and filter to the same kind.
+                    any::<Value>()
+                        .prop_filter("same kind", move |v| v.kind() == kind)
+                        .boxed()
+                }
+            };
+            v2_strategy.prop_map(move |v2| (v1.clone(), v2))
+        })
+        .boxed()
+}
+
 /// Use `property_ensure` to write a value, then overwrite it with a
 /// different value of the same kind. Verify the second value wins.
 #[test]
@@ -165,28 +194,10 @@ fn transaction_property_ensure_overwrites() {
 
     let pg_counter = AtomicU32::new(0);
 
-    // Generate pairs of values that share the same ValueKind.
-    let strategy = any::<Value>().prop_flat_map(|v1| {
-        let kind = v1.kind();
-        let v2_strategy = match kind {
-            ValueKind::Bool => any::<bool>().prop_map(Value::Bool).boxed(),
-            ValueKind::Count => any::<u64>().prop_map(Value::Count).boxed(),
-            ValueKind::Integer => any::<i64>().prop_map(Value::Integer).boxed(),
-            _ => {
-                // For all other kinds, just generate another arbitrary
-                // Value and filter to the same kind.
-                any::<Value>()
-                    .prop_filter("same kind", move |v| v.kind() == kind)
-                    .boxed()
-            }
-        };
-        v2_strategy.prop_map(move |v2| (v1.clone(), v2))
-    });
-
-    proptest!(|(pair in strategy)| {
+    proptest!(|(pair in strategy_same_kind_values())| {
         let (val1, val2) = pair;
         let n = pg_counter.fetch_add(1, Ordering::Relaxed);
-        let pg_name = format!("epg{n}");
+        let pg_name = format!("pg{n}");
 
         // Write both values through property_ensure, then read back.
         {
@@ -251,6 +262,85 @@ fn transaction_property_ensure_overwrites() {
     });
 }
 
+/// Use `property_change` to overwrite an existing property with a new
+/// value of the same kind. Verify the new value is read back.
+#[test]
+fn transaction_property_change_overwrites() {
+    let isolated =
+        IsolatedConfigd::builder("test-svc").unwrap().build().unwrap();
+    let scf = Scf::connect_isolated(&isolated).unwrap();
+    let scope = scf.scope_local().unwrap();
+    let service = scope.service("test-svc").unwrap().unwrap();
+    let instance = RefCell::new(service.instance("default").unwrap().unwrap());
+
+    let pg_counter = AtomicU32::new(0);
+
+    proptest!(|(pair in strategy_same_kind_values())| {
+        let (val1, val2) = pair;
+        let n = pg_counter.fetch_add(1, Ordering::Relaxed);
+        let pg_name = format!("pg{n}");
+
+        // Write val1 via property_new.
+        {
+            let mut inst = instance.borrow_mut();
+            let mut pg = inst
+                .add_property_group(
+                    &pg_name,
+                    PropertyGroupType::Application,
+                    AddPropertyGroupFlags::Persistent,
+                )
+                .expect("add property group");
+
+            let tx = pg.transaction().expect("create transaction");
+            let mut tx = tx.start().expect("start transaction");
+            tx.property_new("prop", val1.as_value_ref())
+                .expect("property_new");
+            let result = tx.commit().expect("commit");
+            assert_matches!(
+                result, TransactionCommitResult::Success(_),
+                "initial commit should succeed",
+            );
+        }
+
+        // Overwrite with val2 via property_change.
+        {
+            let inst = instance.borrow();
+            let mut pg = inst
+                .property_group_direct(&pg_name)
+                .expect("lookup pg")
+                .expect("pg should exist");
+            let tx = pg.transaction().expect("create transaction");
+            let mut tx = tx.start().expect("start transaction");
+            tx.property_change("prop", val2.as_value_ref())
+                .expect("property_change");
+            let result = tx.commit().expect("commit");
+            assert_matches!(
+                result, TransactionCommitResult::Success(_),
+                "change commit should succeed",
+            );
+        }
+
+        // Read back and verify the second value won.
+        {
+            let inst = instance.borrow();
+            let pg = inst
+                .property_group_direct(&pg_name)
+                .expect("lookup pg")
+                .expect("pg should exist");
+            let readback: Vec<Value> = pg
+                .property("prop")
+                .expect("lookup property")
+                .expect("property should exist")
+                .values()
+                .expect("get values")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("iterate values");
+
+            assert_eq!(readback, vec![val2]);
+        }
+    });
+}
+
 /// Write a property via a transaction, then verify it is NOT visible
 /// through the "running" snapshot until after `instance.refresh()`.
 #[test]
@@ -266,7 +356,7 @@ fn transaction_snapshot_visibility_after_refresh() {
 
     proptest!(|(val: Value)| {
         let n = pg_counter.fetch_add(1, Ordering::Relaxed);
-        let pg_name = format!("spg{n}");
+        let pg_name = format!("pg{n}");
 
         // Write phase: add a property group with a single property.
         {
@@ -359,7 +449,7 @@ fn service_property_composed_visibility() {
 
     proptest!(|(val: Value)| {
         let n = pg_counter.fetch_add(1, Ordering::Relaxed);
-        let pg_name = format!("svpg{n}");
+        let pg_name = format!("pg{n}");
 
         // Write phase: add a property group at the service level.
         {
@@ -512,7 +602,7 @@ fn delete_property_group() {
 
     proptest!(|(val: Value)| {
         let n = pg_counter.fetch_add(1, Ordering::Relaxed);
-        let pg_name = format!("dpg{n}");
+        let pg_name = format!("pg{n}");
 
         // Add a property group and write a value into it.
         {
@@ -602,7 +692,7 @@ fn transaction_commit_out_of_date() {
 
     proptest!(|(val: Value)| {
         let n = pg_counter.fetch_add(1, Ordering::Relaxed);
-        let pg_name = format!("odpg{n}");
+        let pg_name = format!("pg{n}");
 
         // Create a property group with an initial value.
         {
@@ -673,4 +763,435 @@ fn transaction_commit_out_of_date() {
             );
         }
     });
+}
+
+/// Verify that `property_new` with a NUL-containing property name
+/// returns `TransactionError::InvalidName`. Also covers
+/// `property_delete`, `property_ensure`, `property_change`, and
+/// `property_change_type` which share the same name validation.
+#[test]
+fn transaction_invalid_property_name() {
+    let isolated =
+        IsolatedConfigd::builder("test-svc").unwrap().build().unwrap();
+    let scf = Scf::connect_isolated(&isolated).unwrap();
+    let scope = scf.scope_local().unwrap();
+    let service = scope.service("test-svc").unwrap().unwrap();
+    let mut instance = service.instance("default").unwrap().unwrap();
+
+    let mut pg = instance
+        .add_property_group(
+            "pg",
+            PropertyGroupType::Application,
+            AddPropertyGroupFlags::Persistent,
+        )
+        .expect("add property group");
+
+    let tx = pg.transaction().expect("create transaction");
+    let mut tx = tx.start().expect("start transaction");
+
+    let err = tx
+        .property_new("prop\0bad", ValueRef::Bool(true))
+        .expect_err("should fail with InvalidName");
+    assert_matches!(err, TransactionError::InvalidName { .. });
+
+    let err = tx
+        .property_delete("del\0bad")
+        .expect_err("should fail with InvalidName");
+    assert_matches!(err, TransactionError::InvalidName { .. });
+
+    let err = tx
+        .property_ensure("ens\0bad", ValueRef::Bool(true))
+        .expect_err("should fail with InvalidName");
+    assert_matches!(
+        err,
+        // property_ensure() tries to look up the existing property first, so we
+        // get an inner invalid name from that lookup instead of a top-level
+        // `TransactionError::InvalidName`.
+        TransactionError::ExistenceLookup {
+            err: LookupError::InvalidName { .. },
+            ..
+        }
+    );
+
+    let err = tx
+        .property_change("chg\0bad", ValueRef::Bool(true))
+        .expect_err("should fail with InvalidName");
+    assert_matches!(err, TransactionError::InvalidName { .. });
+
+    let err = tx
+        .property_change_type("ct\0bad", ValueRef::Bool(true))
+        .expect_err("should fail with InvalidName");
+    assert_matches!(err, TransactionError::InvalidName { .. });
+}
+
+/// Verify that `property_new_multiple` with mismatched value kinds
+/// returns `TransactionError::TypeMismatch`.
+#[test]
+fn transaction_type_mismatch() {
+    let isolated =
+        IsolatedConfigd::builder("test-svc").unwrap().build().unwrap();
+    let scf = Scf::connect_isolated(&isolated).unwrap();
+    let scope = scf.scope_local().unwrap();
+    let service = scope.service("test-svc").unwrap().unwrap();
+    let mut instance = service.instance("default").unwrap().unwrap();
+
+    let mut pg = instance
+        .add_property_group(
+            "pg",
+            PropertyGroupType::Application,
+            AddPropertyGroupFlags::Persistent,
+        )
+        .expect("add property group");
+
+    let tx = pg.transaction().expect("create transaction");
+    let mut tx = tx.start().expect("start transaction");
+
+    let err = tx
+        .property_new_multiple(
+            "prop",
+            ValueKind::Count,
+            std::iter::once(ValueRef::Bool(true)),
+        )
+        .expect_err("should fail with TypeMismatch");
+    assert_matches!(
+        err,
+        TransactionError::TypeMismatch {
+            property_type: ValueKind::Count,
+            value_type: ValueKind::Bool,
+            ..
+        }
+    );
+}
+
+/// Verify that `pg.update()` returns `AlreadyUpToDate` when the
+/// property group has not been modified and `Updated` after a
+/// concurrent modification.
+#[test]
+fn property_group_update_already_up_to_date() {
+    let isolated =
+        IsolatedConfigd::builder("test-svc").unwrap().build().unwrap();
+    let scf = Scf::connect_isolated(&isolated).unwrap();
+    let scope = scf.scope_local().unwrap();
+    let service = scope.service("test-svc").unwrap().unwrap();
+    let mut instance = service.instance("default").unwrap().unwrap();
+
+    let mut pg = instance
+        .add_property_group(
+            "pg",
+            PropertyGroupType::Application,
+            AddPropertyGroupFlags::Persistent,
+        )
+        .expect("add property group");
+
+    // Immediately after creation, the handle should be up to date.
+    let result = pg.update().expect("update");
+    assert_eq!(result, PropertyGroupUpdateResult::AlreadyUpToDate);
+
+    // Modify the property group through a second handle.
+    {
+        let inst2 = service.instance("default").unwrap().unwrap();
+        let mut pg2 = inst2
+            .property_group_direct("pg")
+            .expect("lookup pg")
+            .expect("pg should exist");
+        let tx = pg2.transaction().expect("create transaction");
+        let mut tx = tx.start().expect("start transaction");
+        tx.property_new("prop", ValueRef::Bool(true)).expect("property_new");
+        let result = tx.commit().expect("commit");
+        assert_matches!(result, TransactionCommitResult::Success(_));
+    }
+
+    // The original handle should now see an update.
+    let result = pg.update().expect("update");
+    assert_eq!(result, PropertyGroupUpdateResult::Updated);
+
+    // Calling update again with no further changes should be
+    // AlreadyUpToDate.
+    let result = pg.update().expect("update");
+    assert_eq!(result, PropertyGroupUpdateResult::AlreadyUpToDate);
+}
+
+/// Write an arbitrary value via `property_new`, commit, then delete the
+/// property in a new transaction. Verify the property is gone but the
+/// property group still exists.
+#[test]
+fn transaction_property_delete() {
+    let isolated =
+        IsolatedConfigd::builder("test-svc").unwrap().build().unwrap();
+    let scf = Scf::connect_isolated(&isolated).unwrap();
+    let scope = scf.scope_local().unwrap();
+    let service = scope.service("test-svc").unwrap().unwrap();
+    let instance = RefCell::new(service.instance("default").unwrap().unwrap());
+
+    let pg_counter = AtomicU32::new(0);
+
+    proptest!(|(val: Value)| {
+        let n = pg_counter.fetch_add(1, Ordering::Relaxed);
+        let pg_name = format!("pg{n}");
+
+        // Create a property group and write a value.
+        {
+            let mut inst = instance.borrow_mut();
+            let mut pg = inst
+                .add_property_group(
+                    &pg_name,
+                    PropertyGroupType::Application,
+                    AddPropertyGroupFlags::Persistent,
+                )
+                .expect("add property group");
+
+            let tx = pg.transaction().expect("create transaction");
+            let mut tx = tx.start().expect("start transaction");
+            tx.property_new("prop", val.as_value_ref())
+                .expect("property_new");
+            let result = tx.commit().expect("commit");
+            assert_matches!(
+                result, TransactionCommitResult::Success(_),
+                "initial commit should succeed",
+            );
+        }
+
+        // Delete the property in a new transaction.
+        {
+            let inst = instance.borrow();
+            let mut pg = inst
+                .property_group_direct(&pg_name)
+                .expect("lookup pg")
+                .expect("pg should exist");
+            let tx = pg.transaction().expect("create transaction");
+            let mut tx = tx.start().expect("start transaction");
+            tx.property_delete("prop").expect("property_delete");
+            let result = tx.commit().expect("commit");
+            assert_matches!(
+                result, TransactionCommitResult::Success(_),
+                "delete commit should succeed",
+            );
+        }
+
+        // The property group should still exist, but the property
+        // should be gone.
+        {
+            let inst = instance.borrow();
+            let pg = inst
+                .property_group_direct(&pg_name)
+                .expect("lookup pg")
+                .expect("pg should still exist after property deletion");
+            let prop = pg.property("prop").expect("lookup property");
+            assert!(
+                prop.is_none(),
+                "property should not exist after deletion",
+            );
+        }
+    });
+}
+
+/// Use `property_change_type` to overwrite an existing property with a
+/// value of a potentially different kind. Verify the new value is read
+/// back.
+#[test]
+fn transaction_property_change_type() {
+    let isolated =
+        IsolatedConfigd::builder("test-svc").unwrap().build().unwrap();
+    let scf = Scf::connect_isolated(&isolated).unwrap();
+    let scope = scf.scope_local().unwrap();
+    let service = scope.service("test-svc").unwrap().unwrap();
+    let instance = RefCell::new(service.instance("default").unwrap().unwrap());
+
+    let pg_counter = AtomicU32::new(0);
+
+    proptest!(|(val1: Value, val2: Value)| {
+        let n = pg_counter.fetch_add(1, Ordering::Relaxed);
+        let pg_name = format!("pg{n}");
+
+        // Write val1 via property_new.
+        {
+            let mut inst = instance.borrow_mut();
+            let mut pg = inst
+                .add_property_group(
+                    &pg_name,
+                    PropertyGroupType::Application,
+                    AddPropertyGroupFlags::Persistent,
+                )
+                .expect("add property group");
+
+            let tx = pg.transaction().expect("create transaction");
+            let mut tx = tx.start().expect("start transaction");
+            tx.property_new("prop", val1.as_value_ref())
+                .expect("property_new");
+            let result = tx.commit().expect("commit");
+            assert_matches!(
+                result, TransactionCommitResult::Success(_),
+                "initial commit should succeed",
+            );
+        }
+
+        // Overwrite with val2 via property_change_type (may change
+        // the property's type).
+        {
+            let inst = instance.borrow();
+            let mut pg = inst
+                .property_group_direct(&pg_name)
+                .expect("lookup pg")
+                .expect("pg should exist");
+            let tx = pg.transaction().expect("create transaction");
+            let mut tx = tx.start().expect("start transaction");
+            tx.property_change_type("prop", val2.as_value_ref())
+                .expect("property_change_type");
+            let result = tx.commit().expect("commit");
+            assert_matches!(
+                result, TransactionCommitResult::Success(_),
+                "change_type commit should succeed",
+            );
+        }
+
+        // Read back and verify the second value won.
+        {
+            let inst = instance.borrow();
+            let pg = inst
+                .property_group_direct(&pg_name)
+                .expect("lookup pg")
+                .expect("pg should exist");
+            let readback: Vec<Value> = pg
+                .property("prop")
+                .expect("lookup property")
+                .expect("property should exist")
+                .values()
+                .expect("get values")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("iterate values");
+
+            assert_eq!(readback, vec![val2]);
+        }
+    });
+}
+
+/// Test `Property::single_value()`: happy path via proptest,
+/// `MultipleValues` error for multi-valued properties, and
+/// `NoValues` error if achievable through the API.
+#[test]
+fn single_value_and_errors() {
+    let isolated =
+        IsolatedConfigd::builder("test-svc").unwrap().build().unwrap();
+    let scf = Scf::connect_isolated(&isolated).unwrap();
+    let scope = scf.scope_local().unwrap();
+    let service = scope.service("test-svc").unwrap().unwrap();
+    let instance = RefCell::new(service.instance("default").unwrap().unwrap());
+
+    // (a) Happy path: write a single arbitrary value, read back via
+    // single_value().
+    let pg_counter = AtomicU32::new(0);
+
+    proptest!(|(val: Value)| {
+        let n = pg_counter.fetch_add(1, Ordering::Relaxed);
+        let pg_name = format!("pg{n}");
+
+        {
+            let mut inst = instance.borrow_mut();
+            let mut pg = inst
+                .add_property_group(
+                    &pg_name,
+                    PropertyGroupType::Application,
+                    AddPropertyGroupFlags::Persistent,
+                )
+                .expect("add property group");
+
+            let tx = pg.transaction().expect("create transaction");
+            let mut tx = tx.start().expect("start transaction");
+            tx.property_new("prop", val.as_value_ref())
+                .expect("property_new");
+            let result = tx.commit().expect("commit");
+            assert_matches!(
+                result, TransactionCommitResult::Success(_),
+                "commit should succeed",
+            );
+        }
+
+        {
+            let inst = instance.borrow();
+            let pg = inst
+                .property_group_direct(&pg_name)
+                .expect("lookup pg")
+                .expect("pg should exist");
+            let readback = pg
+                .property("prop")
+                .expect("lookup property")
+                .expect("property should exist")
+                .single_value()
+                .expect("single_value");
+            assert_eq!(readback, val);
+        }
+    });
+
+    // (b) MultipleValues error: write two values, then call
+    // single_value().
+    {
+        let mut inst = instance.borrow_mut();
+        let mut pg = inst
+            .add_property_group(
+                "pg_multi",
+                PropertyGroupType::Application,
+                AddPropertyGroupFlags::Persistent,
+            )
+            .expect("add property group");
+
+        let tx = pg.transaction().expect("create transaction");
+        let mut tx = tx.start().expect("start transaction");
+        tx.property_new_multiple(
+            "prop",
+            ValueKind::Count,
+            [ValueRef::Count(1), ValueRef::Count(2)],
+        )
+        .expect("property_new_multiple");
+        let result = tx.commit().expect("commit");
+        assert_matches!(result, TransactionCommitResult::Success(_));
+    }
+    {
+        let inst = instance.borrow();
+        let pg = inst
+            .property_group_direct("pg_multi")
+            .expect("lookup pg")
+            .expect("pg should exist");
+        let err = pg
+            .property("prop")
+            .expect("lookup property")
+            .expect("property should exist")
+            .single_value()
+            .expect_err("should fail with MultipleValues");
+        assert_matches!(err, SingleValueError::MultipleValues { .. });
+    }
+
+    // (c) NoValues error: create a property with zero values, then call
+    // single_value().
+    {
+        let mut inst = instance.borrow_mut();
+        let mut pg = inst
+            .add_property_group(
+                "pg_empty",
+                PropertyGroupType::Application,
+                AddPropertyGroupFlags::Persistent,
+            )
+            .expect("add property group");
+
+        let tx = pg.transaction().expect("create transaction");
+        let mut tx = tx.start().expect("start transaction");
+        tx.property_new_multiple("prop", ValueKind::Count, std::iter::empty())
+            .expect("property_new_multiple with empty values");
+        let result = tx.commit().expect("commit");
+        assert_matches!(result, TransactionCommitResult::Success(_));
+    }
+    {
+        let inst = instance.borrow();
+        let pg = inst
+            .property_group_direct("pg_empty")
+            .expect("lookup pg")
+            .expect("pg should exist");
+        let prop =
+            pg.property("prop").expect("lookup property").expect("prop exists");
+        let err = prop.single_value().expect_err("should fail with NoValues");
+        assert_matches!(err, SingleValueError::NoValues { .. });
+
+        // values() should work and give us an empty iterator
+        let mut values = prop.values().expect("create iterator");
+        assert_matches!(values.next(), None);
+    }
 }
