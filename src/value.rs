@@ -45,6 +45,7 @@ use test_strategy::Arbitrary;
 /// each family map down to a single `libscf` type (e.g., `Value::NetAddrV4(_)`
 /// and `Value::NetV4(_)` both map to [`scf_type_t::SCF_TYPE_NET_ADDR_V4`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "daft", derive(daft::Diffable))]
 #[cfg_attr(any(test, feature = "testing"), derive(Arbitrary))]
 pub enum Value {
     Bool(bool),
@@ -168,6 +169,7 @@ impl Value {
 /// Does not map the special "invalid" type used by `libscf` as an in-band
 /// error code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "daft", derive(daft::Diffable))]
 pub enum ValueKind {
     Bool,
     Count,
@@ -232,6 +234,7 @@ impl ValueKind {
 
 /// Analogue of [`Value`] that contains borrowed data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "daft", derive(daft::Diffable))]
 pub enum ValueRef<'a> {
     Bool(bool),
     Count(u64),

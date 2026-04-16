@@ -12,6 +12,9 @@ num-traits = "0.2"
 oxnet = "0.1.4"
 thiserror = "2.0"
 
+# optional dependencies
+daft = { version = "0.1.5", features = ["derive"], optional = true }
+
 # testing-only dependencies
 camino = { version = "1.2.2", optional = true }
 camino-tempfile = { version = "1.4.1", optional = true }
@@ -54,6 +57,7 @@ name = "transaction"
 required-features = ["testing"]
 
 [features]
+daft = ["dep:daft"]
 testing = [
     "dep:camino",
     "dep:camino-tempfile",
