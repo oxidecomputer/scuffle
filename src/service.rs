@@ -22,6 +22,7 @@ use crate::error::LookupError;
 use crate::error::PropertyGroupAddError;
 use crate::error::ScfEntity;
 use crate::iter::ScfUninitializedIter;
+use crate::libscf_sys_supplemental;
 use crate::scf::ScfObject;
 use crate::utf8cstring::InstanceFmri;
 use crate::utf8cstring::PropertyGroupFmri;
@@ -84,7 +85,11 @@ impl<'a> Service<'a> {
         pg: *mut libscf_sys::scf_propertygroup_t,
     ) -> Result<(), LibscfError> {
         LibscfError::from_ret(unsafe {
-            libscf_sys::scf_service_get_pg(self.handle.as_ptr(), name, pg)
+            libscf_sys_supplemental::scf_service_get_pg(
+                self.handle.as_ptr(),
+                name,
+                pg,
+            )
         })
     }
 
@@ -155,7 +160,7 @@ impl EditPropertyGroups for Service<'_> {
         let AddPropertyGroupArgs { name, mut handle, flags } =
             AddPropertyGroupArgs::validate(self.scf(), self, name, flags)?;
         LibscfError::from_ret(unsafe {
-            libscf_sys::scf_service_add_pg(
+            libscf_sys_supplemental::scf_service_add_pg(
                 self.handle.as_mut_ptr(),
                 name.as_c_str().as_ptr(),
                 pg_type.as_c_str().as_ptr(),

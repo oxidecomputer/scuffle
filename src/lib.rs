@@ -43,6 +43,10 @@ mod transaction;
 mod utf8cstring;
 mod value;
 
+// TODO-cleanup Remove once https://github.com/illumos/libscf-sys/pull/2 is
+// released.
+mod libscf_sys_supplemental;
+
 pub mod error;
 
 #[cfg(any(test, feature = "testing"))]
