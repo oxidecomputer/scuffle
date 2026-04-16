@@ -48,6 +48,7 @@ pub enum DeletePropertyGroupResult {
 /// [`Instance`]: crate::Instance
 /// [`Service`]: crate::Service
 pub trait EditPropertyGroups: HasDirectPropertyGroups + ErrorPath {
+    /// Add a new property group.
     fn add_property_group(
         &mut self,
         name: &str,
@@ -55,6 +56,11 @@ pub trait EditPropertyGroups: HasDirectPropertyGroups + ErrorPath {
         flags: AddPropertyGroupFlags,
     ) -> Result<PropertyGroup<'_, PropertyGroupDirect>, AddPropertyGroupError>;
 
+    /// Ensure a property group exists.
+    ///
+    /// If a property group of the given name already exists, it is returned;
+    /// its type is _not_ guaranteed to match `pg_type`. If no property group of
+    /// the given name exists, it will be created.
     fn ensure_property_group(
         &mut self,
         name: &str,
@@ -94,6 +100,7 @@ pub trait EditPropertyGroups: HasDirectPropertyGroups + ErrorPath {
             })
     }
 
+    /// Delete a property group by name.
     fn delete_property_group(
         &mut self,
         name: &str,

@@ -9,6 +9,9 @@ use crate::error::LookupError;
 use crate::error::ScopeError;
 use crate::scf::ScfObject;
 
+/// Handle to an SMF scope.
+///
+/// SMF currently only supports one scope: the local scope.
 pub struct Scope<'a> {
     handle: ScfObject<'a, libscf_sys::scf_scope_t>,
 }
@@ -41,6 +44,7 @@ impl<'a> Scope<'a> {
         })
     }
 
+    /// Look up a service by name.
     pub fn service(
         &self,
         name: &str,

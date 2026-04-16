@@ -27,6 +27,7 @@ pub(crate) use object::ScfObjectType;
 #[cfg(any(test, feature = "testing"))]
 use crate::isolated::IsolatedConfigd;
 
+/// Entry-point handle to `libscf`.
 // We intentionally do not impl `Send` or `Sync` for `Scf`. Errors flow out
 // through the thread-local `scf_error()` function, so we don't want to mix
 // use of the same handle across different threads.
@@ -53,6 +54,7 @@ impl Drop for Scf<'_> {
 }
 
 impl Scf<'static> {
+    /// Connect to the `svc.configd` instance in the global zone.
     pub fn connect_global_zone() -> Result<Self, ScfError> {
         Self::connect_common(
             ConnectMode::Global,
@@ -60,6 +62,7 @@ impl Scf<'static> {
         )
     }
 
+    /// Connect to the `svc.configd` instance in a named zone.
     pub fn connect_zone(zonename: &str) -> Result<Self, ScfError> {
         Self::connect_common(
             ConnectMode::Zone(zonename),
@@ -70,6 +73,7 @@ impl Scf<'static> {
 
 #[cfg(any(test, feature = "testing"))]
 impl<'a> Scf<'a> {
+    /// Connect to the `svc.configd` running inside an [`IsolatedConfigd`].
     pub fn connect_isolated(
         configd: &'a IsolatedConfigd,
     ) -> Result<Self, ScfError> {
@@ -161,10 +165,14 @@ impl<'a> Scf<'a> {
         Ok(scf)
     }
 
+    /// Get a handle to the local scope.
+    ///
+    /// `libscf` currently does not support any other scopes.
     pub fn scope_local(&self) -> Result<Scope<'_>, ScopeError> {
         Scope::new_local(self)
     }
 
+    /// Refresh an SMF instance based identified by its FMRI.
     pub fn refresh_instance(&self, fmri: &str) -> Result<(), RefreshError> {
         let fmri = CString::new(fmri).map_err(|err| {
             RefreshError::InvalidFmri { fmri: Box::from(fmri), err }
@@ -172,6 +180,7 @@ impl<'a> Scf<'a> {
         self.refresh_instance_cstr(&fmri)
     }
 
+    /// Obtain an [`Instance`] handle identified by its FMRI.
     pub fn instance_from_fmri(
         &self,
         fmri: &str,
@@ -179,6 +188,16 @@ impl<'a> Scf<'a> {
         Instance::from_fmri(self, fmri)
     }
 
+    /// From within a running service instance, get our own [`Instance`].
+    ///
+    /// If you are using this to look up the current value of your properties,
+    /// you almost certainly want to call [`Instance::snapshot("running")`]
+    /// on the returned instance.
+    ///
+    /// This method looks up our own FMRI via the `SMF_FMRI` environment
+    /// variable, which is supplied by SMF to running instances.
+    ///
+    /// [`Instance::snapshot("running")`]: Instance::snapshot
     pub fn self_instance_from_env(
         &self,
     ) -> Result<Instance<'_>, InstanceFromEnvError> {

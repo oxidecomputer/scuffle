@@ -29,6 +29,7 @@ use crate::utf8cstring::ServiceFmri;
 use crate::utf8cstring::Utf8CString;
 use std::marker::PhantomData;
 
+/// Handle to an SMF service.
 #[derive(Debug)]
 pub struct Service<'a> {
     // Lifetime that binds us to the parent `Scope`, ensuring we outlive it.
@@ -101,14 +102,17 @@ impl<'a> Service<'a> {
         })
     }
 
+    /// The name of this service.
     pub fn name(&self) -> &str {
         self.name.as_str()
     }
 
+    /// The full FMRI of this service.
     pub fn fmri(&self) -> &str {
         self.fmri.as_str()
     }
 
+    /// Look up an instance of this service by name.
     pub fn instance(
         &self,
         name: &str,
@@ -127,6 +131,7 @@ impl<'a> Service<'a> {
         self.fmri.append_pg(name)
     }
 
+    /// Get an iterator over all [`Instance`]s of this service.
     pub fn instances(&self) -> Result<Instances<'_>, IterError> {
         let iter = ScfUninitializedIter::new(self.scf())?;
         let iter = unsafe { iter.init_service_instances(self.handle.as_ptr()) }

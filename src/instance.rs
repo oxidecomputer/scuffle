@@ -33,6 +33,20 @@ use crate::utf8cstring::InstanceFmri;
 use crate::utf8cstring::PropertyGroupFmri;
 use crate::utf8cstring::Utf8CString;
 
+/// Handle to an SMF instance.
+///
+/// Instances may be obtained by way of their parent service
+/// ([`Service::instance()`]), by direct-FMRI lookup
+/// ([`Scf::instance_from_fmri()`]), or by direct-FMRI lookup for the current
+/// process assuming it is running under SMF
+/// ([`Scf::self_instance_from_env()`]).
+///
+/// For processes that want to read their own effective configuration, the
+/// recommended path is to obtain the self instance via
+/// [`Scf::self_instance_from_env()`] and then obtain the running snapshot via
+/// [`Instance::snapshot("running")`].
+///
+/// [`Instance::snapshot("running")`]: Instance::snapshot
 #[derive(Debug)]
 pub struct Instance<'a> {
     name: Utf8CString,
@@ -177,14 +191,22 @@ impl<'a> Instance<'a> {
         })
     }
 
+    /// The name of this instance.
     pub fn name(&self) -> &str {
         self.name.as_str()
     }
 
+    /// The full FMRI of this instance.
     pub fn fmri(&self) -> &str {
         self.fmri.as_str()
     }
 
+    /// Refresh this instance.
+    ///
+    /// This is equivalent to running `svcadm refresh THIS_INSTANCE`; i.e.,
+    /// it will both update the `"running"` snapshot to match any property
+    /// changes made since the last time the instance was refreshed and will
+    /// invoke the instance's SMF `refresh` method.
     pub fn refresh(&self) -> Result<(), RefreshError> {
         self.scf().refresh_instance_cstr(self.fmri.as_c_str())
     }
@@ -196,6 +218,7 @@ impl<'a> Instance<'a> {
         self.fmri.append_pg(name)
     }
 
+    /// Look up a snapshot in this instance by name.
     pub fn snapshot(
         &self,
         name: &str,
@@ -203,6 +226,7 @@ impl<'a> Instance<'a> {
         Snapshot::new(self, name)
     }
 
+    /// Get an iterator over all [`Snapshot`]s in this instance.
     pub fn snapshots(&self) -> Result<Snapshots<'_>, IterError> {
         let iter = ScfUninitializedIter::new(self.scf())?;
         let iter =
@@ -297,6 +321,9 @@ impl ErrorPath for Instance<'_> {
     }
 }
 
+/// Iterator over all [`Instance`]s in a [`Service`].
+///
+/// Obtained via [`Service::instances()`].
 pub struct Instances<'a> {
     service: &'a Service<'a>,
     iter: ScfIter<'a, libscf_sys::scf_instance_t>,

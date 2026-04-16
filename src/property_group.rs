@@ -265,7 +265,7 @@ impl<'a, St> PropertyGroup<'a, St> {
         Property::from_property_group(self, name)
     }
 
-    /// Get an iterator over all properties in this property group.
+    /// Get an iterator over all [`Property`]s in this property group.
     pub fn properties(&self) -> Result<Properties<'_, St>, IterError> {
         let iter = ScfUninitializedIter::new(self.scf())?;
         let iter = unsafe {
