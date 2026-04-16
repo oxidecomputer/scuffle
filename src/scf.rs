@@ -9,7 +9,7 @@ use crate::error::HandleCreateError;
 use crate::error::InstanceFromEnvError;
 use crate::error::InstanceFromFmriError;
 use crate::error::LibscfError;
-use crate::error::RefreshError;
+use crate::error::InstanceRefreshError;
 use crate::error::ScfEntity;
 use crate::error::ScfError;
 use crate::error::ScopeError;
@@ -172,10 +172,10 @@ impl<'a> Scf<'a> {
         Scope::new_local(self)
     }
 
-    /// Refresh an SMF instance based identified by its FMRI.
-    pub fn refresh_instance(&self, fmri: &str) -> Result<(), RefreshError> {
+    /// Refresh an SMF instance identified by its FMRI.
+    pub fn refresh_instance(&self, fmri: &str) -> Result<(), InstanceRefreshError> {
         let fmri = CString::new(fmri).map_err(|err| {
-            RefreshError::InvalidFmri { fmri: Box::from(fmri), err }
+            InstanceRefreshError::InvalidFmri { fmri: Box::from(fmri), err }
         })?;
         self.refresh_instance_cstr(&fmri)
     }
@@ -226,7 +226,7 @@ impl<'a> Scf<'a> {
     pub(crate) fn refresh_instance_cstr(
         &self,
         fmri: &CStr,
-    ) -> Result<(), RefreshError> {
+    ) -> Result<(), InstanceRefreshError> {
         self.refresher.refresh_instance(fmri)
     }
 
@@ -292,7 +292,7 @@ enum RefreshMechanism<'a> {
 }
 
 impl RefreshMechanism<'_> {
-    fn refresh_instance(&self, fmri: &CStr) -> Result<(), RefreshError> {
+    fn refresh_instance(&self, fmri: &CStr) -> Result<(), InstanceRefreshError> {
         match self {
             RefreshMechanism::Libscf(_) => {
                 // Per the manpage, `smf_refresh_instance()` still sets an error
@@ -300,7 +300,7 @@ impl RefreshMechanism<'_> {
                 // same error handling as all our other libscf calls.
                 let ret =
                     unsafe { libscf_sys::smf_refresh_instance(fmri.as_ptr()) };
-                LibscfError::from_ret(ret).map_err(|err| RefreshError::Failed {
+                LibscfError::from_ret(ret).map_err(|err| InstanceRefreshError::Failed {
                     fmri: String::from_utf8_lossy(fmri.to_bytes())
                         .into_owned()
                         .into_boxed_str(),

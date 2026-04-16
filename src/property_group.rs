@@ -13,7 +13,7 @@ use crate::Transaction;
 use crate::TransactionReset;
 use crate::buf::scf_get_string;
 use crate::buf::with_scf_pg_type_buf;
-use crate::error::DeletePropertyGroupError;
+use crate::error::PropertyGroupDeleteError;
 use crate::error::ErrorPath;
 use crate::error::IterError;
 use crate::error::IterErrorKind;
@@ -21,8 +21,8 @@ use crate::error::LibscfError;
 use crate::error::LookupError;
 use crate::error::PropertyGroupTypeError;
 use crate::error::ScfEntity;
-use crate::error::TransactionError;
-use crate::error::UpdatePropertyGroupError;
+use crate::error::TransactionBuildError;
+use crate::error::PropertyGroupUpdateError;
 use crate::iter::ScfIter;
 use crate::iter::ScfUninitializedIter;
 use crate::scf::ScfObject;
@@ -36,7 +36,7 @@ use std::marker::PhantomData;
 /// Property group types.
 ///
 /// The underlying values for these variants map to the corresponding
-/// `SCF_GROUP_*` constants in `libscf.h.`.
+/// `SCF_GROUP_*` constants in `libscf.h`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(any(test, feature = "testing"), derive(test_strategy::Arbitrary))]
 pub enum PropertyGroupType {
@@ -65,6 +65,7 @@ impl fmt::Display for PropertyGroupType {
 }
 
 impl PropertyGroupType {
+    /// Parse a string as one of the known property group types.
     pub fn new(name: &str) -> Option<Self> {
         let pg_type = match name {
             "application" => Self::Application,
@@ -283,11 +284,11 @@ impl<'a, St> PropertyGroup<'a, St> {
     /// version of this property group.
     pub fn update(
         &mut self,
-    ) -> Result<PropertyGroupUpdateResult, UpdatePropertyGroupError> {
+    ) -> Result<PropertyGroupUpdateResult, PropertyGroupUpdateError> {
         match unsafe { libscf_sys::scf_pg_update(self.handle.as_mut_ptr()) } {
             0 => Ok(PropertyGroupUpdateResult::AlreadyUpToDate),
             1 => Ok(PropertyGroupUpdateResult::Updated),
-            _ => Err(UpdatePropertyGroupError::Failed {
+            _ => Err(PropertyGroupUpdateError::Failed {
                 description: self.error_path(),
                 err: LibscfError::last(),
             }),
@@ -379,13 +380,13 @@ impl<'a> PropertyGroup<'a, PropertyGroupDirect> {
     /// through composed views are not supported.
     pub fn transaction(
         &mut self,
-    ) -> Result<Transaction<'_, 'a, TransactionReset>, TransactionError> {
+    ) -> Result<Transaction<'_, 'a, TransactionReset>, TransactionBuildError> {
         Transaction::new(self)
     }
 
     pub(crate) fn delete(
         mut self,
-    ) -> Result<DeletePropertyGroupResult, DeletePropertyGroupError> {
+    ) -> Result<DeletePropertyGroupResult, PropertyGroupDeleteError> {
         let result = LibscfError::from_ret(unsafe {
             libscf_sys::scf_pg_delete(self.handle.as_mut_ptr())
         });
@@ -397,7 +398,7 @@ impl<'a> PropertyGroup<'a, PropertyGroupDirect> {
             Err(LibscfError::Deleted) => {
                 Ok(DeletePropertyGroupResult::DoesNotExist)
             }
-            Err(err) => Err(DeletePropertyGroupError::Delete {
+            Err(err) => Err(PropertyGroupDeleteError::Delete {
                 description: self.error_path(),
                 err,
             }),

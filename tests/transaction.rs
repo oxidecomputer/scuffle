@@ -21,7 +21,7 @@ use scuffle::ValueKind;
 use scuffle::ValueRef;
 use scuffle::error::LookupError;
 use scuffle::error::SingleValueError;
-use scuffle::error::TransactionError;
+use scuffle::error::TransactionBuildError;
 use scuffle::isolated::IsolatedConfigd;
 use std::cell::RefCell;
 use std::sync::atomic::AtomicU32;
@@ -792,12 +792,12 @@ fn transaction_invalid_property_name() {
     let err = tx
         .property_new("prop\0bad", ValueRef::Bool(true))
         .expect_err("should fail with InvalidName");
-    assert_matches!(err, TransactionError::InvalidName { .. });
+    assert_matches!(err, TransactionBuildError::InvalidName { .. });
 
     let err = tx
         .property_delete("del\0bad")
         .expect_err("should fail with InvalidName");
-    assert_matches!(err, TransactionError::InvalidName { .. });
+    assert_matches!(err, TransactionBuildError::InvalidName { .. });
 
     let err = tx
         .property_ensure("ens\0bad", ValueRef::Bool(true))
@@ -807,7 +807,7 @@ fn transaction_invalid_property_name() {
         // property_ensure() tries to look up the existing property first, so we
         // get an inner invalid name from that lookup instead of a top-level
         // `TransactionError::InvalidName`.
-        TransactionError::ExistenceLookup {
+        TransactionBuildError::ExistenceLookup {
             err: LookupError::InvalidName { .. },
             ..
         }
@@ -816,12 +816,12 @@ fn transaction_invalid_property_name() {
     let err = tx
         .property_change("chg\0bad", ValueRef::Bool(true))
         .expect_err("should fail with InvalidName");
-    assert_matches!(err, TransactionError::InvalidName { .. });
+    assert_matches!(err, TransactionBuildError::InvalidName { .. });
 
     let err = tx
         .property_change_type("ct\0bad", ValueRef::Bool(true))
         .expect_err("should fail with InvalidName");
-    assert_matches!(err, TransactionError::InvalidName { .. });
+    assert_matches!(err, TransactionBuildError::InvalidName { .. });
 }
 
 /// Verify that `property_new_multiple` with mismatched value kinds
@@ -855,7 +855,7 @@ fn transaction_type_mismatch() {
         .expect_err("should fail with TypeMismatch");
     assert_matches!(
         err,
-        TransactionError::TypeMismatch {
+        TransactionBuildError::TypeMismatch {
             property_type: ValueKind::Count,
             value_type: ValueKind::Bool,
             ..

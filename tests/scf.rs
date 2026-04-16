@@ -9,11 +9,11 @@ use scuffle::HasComposedPropertyGroups;
 use scuffle::HasDirectPropertyGroups;
 use scuffle::PropertyGroupType;
 use scuffle::Scf;
-use scuffle::error::AddPropertyGroupError;
 use scuffle::error::InstanceFromEnvError;
 use scuffle::error::InstanceFromFmriError;
 use scuffle::error::LibscfError;
 use scuffle::error::LookupError;
+use scuffle::error::PropertyGroupAddError;
 use scuffle::error::ScfEntity;
 use scuffle::isolated::IsolatedConfigd;
 
@@ -220,7 +220,7 @@ fn ensure_property_group_idempotent() {
 }
 
 /// Verify that `add_property_group` with a NUL-containing name returns
-/// `AddPropertyGroupError::InvalidName`.
+/// `PropertyGroupAddError::InvalidName`.
 #[test]
 fn add_property_group_invalid_name() {
     let isolated =
@@ -237,11 +237,11 @@ fn add_property_group_invalid_name() {
             AddPropertyGroupFlags::Persistent,
         )
         .expect_err("should fail with InvalidName");
-    assert_matches!(err, AddPropertyGroupError::InvalidName { .. });
+    assert_matches!(err, PropertyGroupAddError::InvalidName { .. });
 }
 
 /// Verify that calling `add_property_group` twice with the same name
-/// returns `AddPropertyGroupError::Add` with `LibscfError::Exists`.
+/// returns `PropertyGroupAddError::Add` with `LibscfError::Exists`.
 #[test]
 fn add_property_group_already_exists() {
     let isolated =
@@ -268,7 +268,7 @@ fn add_property_group_already_exists() {
         .expect_err("second add should fail with Exists");
     assert_matches!(
         err,
-        AddPropertyGroupError::Add { err: LibscfError::Exists, .. }
+        PropertyGroupAddError::Add { err: LibscfError::Exists, .. }
     );
 }
 
@@ -326,9 +326,8 @@ fn lookup_invalid_name() {
     let mut instance = service.instance("default").unwrap().unwrap();
 
     // Scope::service with NUL
-    let err = scope
-        .service("svc\0bad")
-        .expect_err("should fail with InvalidName");
+    let err =
+        scope.service("svc\0bad").expect_err("should fail with InvalidName");
     assert_matches!(
         err,
         LookupError::InvalidName { entity: ScfEntity::Service, .. }
@@ -358,10 +357,7 @@ fn lookup_invalid_name() {
         .expect_err("should fail with InvalidName");
     assert_matches!(
         err,
-        LookupError::InvalidName {
-            entity: ScfEntity::PropertyGroup,
-            ..
-        }
+        LookupError::InvalidName { entity: ScfEntity::PropertyGroup, .. }
     );
 
     // Instance::property_group_composed with NUL
@@ -370,10 +366,7 @@ fn lookup_invalid_name() {
         .expect_err("should fail with InvalidName");
     assert_matches!(
         err,
-        LookupError::InvalidName {
-            entity: ScfEntity::PropertyGroup,
-            ..
-        }
+        LookupError::InvalidName { entity: ScfEntity::PropertyGroup, .. }
     );
 
     // Property lookup with NUL (need a real PG first)

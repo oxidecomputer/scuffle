@@ -25,7 +25,7 @@
 //! * Non-persistent property groups do not work inside `IsolatedConfigd`.
 //!
 //! `scuffle` uses `IsolatedConfigd` for its own tests, and therefore does not
-//! have test coverage on features that interacts with these restrictions.
+//! have test coverage on features that interact with these restrictions.
 
 mod buf;
 mod edit_property_groups;

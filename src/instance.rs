@@ -17,14 +17,14 @@ use crate::Snapshot;
 use crate::Snapshots;
 use crate::buf::scf_get_name;
 use crate::edit_property_groups::AddPropertyGroupArgs;
-use crate::error::AddPropertyGroupError;
+use crate::error::PropertyGroupAddError;
 use crate::error::ErrorPath;
 use crate::error::InstanceFromFmriError;
 use crate::error::IterError;
 use crate::error::IterErrorKind;
 use crate::error::LibscfError;
 use crate::error::LookupError;
-use crate::error::RefreshError;
+use crate::error::InstanceRefreshError;
 use crate::error::ScfEntity;
 use crate::iter::ScfIter;
 use crate::iter::ScfUninitializedIter;
@@ -207,7 +207,7 @@ impl<'a> Instance<'a> {
     /// it will both update the `"running"` snapshot to match any property
     /// changes made since the last time the instance was refreshed and will
     /// invoke the instance's SMF `refresh` method.
-    pub fn refresh(&self) -> Result<(), RefreshError> {
+    pub fn refresh(&self) -> Result<(), InstanceRefreshError> {
         self.scf().refresh_instance_cstr(self.fmri.as_c_str())
     }
 
@@ -246,7 +246,7 @@ impl EditPropertyGroups for Instance<'_> {
         name: &str,
         pg_type: PropertyGroupType,
         flags: AddPropertyGroupFlags,
-    ) -> Result<PropertyGroup<'_, PropertyGroupDirect>, AddPropertyGroupError>
+    ) -> Result<PropertyGroup<'_, PropertyGroupDirect>, PropertyGroupAddError>
     {
         let AddPropertyGroupArgs { name, mut handle, flags } =
             AddPropertyGroupArgs::validate(self.scf(), self, name, flags)?;
@@ -259,7 +259,7 @@ impl EditPropertyGroups for Instance<'_> {
                 handle.as_mut_ptr(),
             )
         })
-        .map_err(|err| AddPropertyGroupError::Add {
+        .map_err(|err| PropertyGroupAddError::Add {
             parent: self.error_path(),
             name: name.to_string().into_boxed_str(),
             err,

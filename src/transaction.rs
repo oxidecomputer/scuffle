@@ -9,7 +9,8 @@ use crate::ValueKind;
 use crate::ValueRef;
 use crate::error::ErrorPath;
 use crate::error::LibscfError;
-use crate::error::TransactionError;
+use crate::error::TransactionBuildError;
+use crate::error::TransactionCommitError;
 use crate::error::TransactionOp;
 use crate::error::TransactionPropertyError;
 use crate::scf::ScfObject;
@@ -125,7 +126,7 @@ impl<'a, 'pg, St> Transaction<'a, 'pg, St> {
 impl<'a, 'pg> Transaction<'a, 'pg, TransactionReset> {
     pub(crate) fn new(
         property_group: &'a mut PropertyGroup<'pg, PropertyGroupDirect>,
-    ) -> Result<Self, TransactionError> {
+    ) -> Result<Self, TransactionBuildError> {
         let handle = property_group.scf().scf_transaction_create()?;
         Ok(Self {
             inner: TransactionInner {
@@ -144,7 +145,7 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionReset> {
     /// between `start()` and `commit()`.
     pub fn start(
         mut self,
-    ) -> Result<Transaction<'a, 'pg, TransactionStarted>, TransactionError>
+    ) -> Result<Transaction<'a, 'pg, TransactionStarted>, TransactionBuildError>
     {
         match unsafe {
             self.inner
@@ -154,7 +155,7 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionReset> {
             Ok(()) => {
                 Ok(Transaction { inner: self.inner, _state: PhantomData })
             }
-            Err(err) => Err(TransactionError::Start {
+            Err(err) => Err(TransactionBuildError::Start {
                 property_group: self.pg_error_path(),
                 err,
             }),
@@ -167,9 +168,9 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
     fn check_property_name(
         &self,
         name: &str,
-    ) -> Result<Utf8CString, TransactionError> {
+    ) -> Result<Utf8CString, TransactionBuildError> {
         Utf8CString::from_str(name).map_err(|err| {
-            TransactionError::InvalidName {
+            TransactionBuildError::InvalidName {
                 property_group: self.pg_error_path(),
                 err,
             }
@@ -181,11 +182,11 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
         name: &Utf8CString,
         expected_kind: ValueKind,
         values: I,
-    ) -> Result<Vec<ScfValue<'a>>, TransactionError> {
+    ) -> Result<Vec<ScfValue<'a>>, TransactionBuildError> {
         let mut collected = Vec::new();
         for val in values {
             if val.kind() != expected_kind {
-                return Err(TransactionError::TypeMismatch {
+                return Err(TransactionBuildError::TypeMismatch {
                     property_group: self.pg_error_path(),
                     name: name.to_string().into_boxed_str(),
                     property_type: expected_kind,
@@ -194,10 +195,12 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
             }
 
             let mut scf_val = ScfValue::new(self.scf())?;
-            scf_val.set(val).map_err(|err| TransactionError::SetValue {
-                property_group: self.pg_error_path(),
-                name: name.to_string().into_boxed_str(),
-                err,
+            scf_val.set(val).map_err(|err| {
+                TransactionBuildError::SetValue {
+                    property_group: self.pg_error_path(),
+                    name: name.to_string().into_boxed_str(),
+                    err,
+                }
             })?;
 
             collected.push(scf_val);
@@ -209,7 +212,7 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
     pub fn property_delete(
         &mut self,
         name: &str,
-    ) -> Result<(), TransactionError> {
+    ) -> Result<(), TransactionBuildError> {
         let name = self.check_property_name(name)?;
         let entry = TransactionEntry::new_delete(self, &name)?;
         self.inner.entries.push(entry);
@@ -226,7 +229,7 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
         &mut self,
         name: &str,
         value: ValueRef<'_>,
-    ) -> Result<(), TransactionError> {
+    ) -> Result<(), TransactionBuildError> {
         self.property_new_multiple(name, value.kind(), std::iter::once(value))
     }
 
@@ -243,7 +246,7 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
         name: &str,
         value_kind: ValueKind,
         values: I,
-    ) -> Result<(), TransactionError>
+    ) -> Result<(), TransactionBuildError>
     where
         I: IntoIterator<Item = ValueRef<'b>>,
     {
@@ -265,7 +268,7 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
         &mut self,
         name: &str,
         value: ValueRef<'_>,
-    ) -> Result<(), TransactionError> {
+    ) -> Result<(), TransactionBuildError> {
         self.property_change_multiple(
             name,
             value.kind(),
@@ -287,7 +290,7 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
         name: &str,
         value_kind: ValueKind,
         values: I,
-    ) -> Result<(), TransactionError>
+    ) -> Result<(), TransactionBuildError>
     where
         I: IntoIterator<Item = ValueRef<'b>>,
     {
@@ -310,7 +313,7 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
         &mut self,
         name: &str,
         value: ValueRef<'_>,
-    ) -> Result<(), TransactionError> {
+    ) -> Result<(), TransactionBuildError> {
         self.property_change_type_multiple(
             name,
             value.kind(),
@@ -332,7 +335,7 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
         name: &str,
         value_kind: ValueKind,
         values: I,
-    ) -> Result<(), TransactionError>
+    ) -> Result<(), TransactionBuildError>
     where
         I: IntoIterator<Item = ValueRef<'b>>,
     {
@@ -352,7 +355,7 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
         &mut self,
         name: &str,
         value: ValueRef<'_>,
-    ) -> Result<(), TransactionError> {
+    ) -> Result<(), TransactionBuildError> {
         self.property_ensure_multiple(
             name,
             value.kind(),
@@ -374,7 +377,7 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
         name: &str,
         value_kind: ValueKind,
         values: I,
-    ) -> Result<(), TransactionError>
+    ) -> Result<(), TransactionBuildError>
     where
         I: IntoIterator<Item = ValueRef<'b>>,
     {
@@ -382,7 +385,7 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
             .inner
             .property_group
             .property(name)
-            .map_err(|err| TransactionError::ExistenceLookup {
+            .map_err(|err| TransactionBuildError::ExistenceLookup {
                 property_group: self.pg_error_path(),
                 name: name.to_string().into_boxed_str(),
                 err,
@@ -399,7 +402,7 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
     /// Commit this transaction.
     pub fn commit(
         mut self,
-    ) -> Result<TransactionCommitResult<'a, 'pg>, TransactionError> {
+    ) -> Result<TransactionCommitResult<'a, 'pg>, TransactionCommitError> {
         match unsafe {
             libscf_sys::scf_transaction_commit(self.inner.handle.as_mut_ptr())
         } {
@@ -410,7 +413,7 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
             })),
             _ => {
                 let err = LibscfError::last();
-                Err(TransactionError::Commit {
+                Err(TransactionCommitError {
                     property_group: self.pg_error_path(),
                     err,
                 })
@@ -441,13 +444,13 @@ impl<'a> TransactionEntry<'a> {
         name: &Utf8CString,
         mut values: Vec<ScfValue<'a>>,
         f: F,
-    ) -> Result<Self, TransactionError>
+    ) -> Result<Self, TransactionBuildError>
     where
         F: FnOnce(
             &mut Transaction<'a, '_, TransactionStarted>,
             &Utf8CString,
             &mut ScfObject<'a, libscf_sys::scf_transaction_entry_t>,
-        ) -> Result<(), TransactionError>,
+        ) -> Result<(), TransactionBuildError>,
     {
         let mut handle = tx.scf().scf_entry_create()?;
 
@@ -469,7 +472,7 @@ impl<'a> TransactionEntry<'a> {
     fn new_delete(
         tx: &mut Transaction<'a, '_, TransactionStarted>,
         name: &Utf8CString,
-    ) -> Result<Self, TransactionError> {
+    ) -> Result<Self, TransactionBuildError> {
         let values = Vec::new(); // delete has no attached values
 
         Self::new_common(tx, name, values, |tx, name, handle| {
@@ -495,7 +498,7 @@ impl<'a> TransactionEntry<'a> {
         name: &Utf8CString,
         value_kind: ValueKind,
         values: Vec<ScfValue<'a>>,
-    ) -> Result<Self, TransactionError> {
+    ) -> Result<Self, TransactionBuildError> {
         Self::new_common(tx, name, values, |tx, name, handle| {
             LibscfError::from_ret(unsafe {
                 libscf_sys::scf_transaction_property_new(
@@ -520,7 +523,7 @@ impl<'a> TransactionEntry<'a> {
         name: &Utf8CString,
         value_kind: ValueKind,
         values: Vec<ScfValue<'a>>,
-    ) -> Result<Self, TransactionError> {
+    ) -> Result<Self, TransactionBuildError> {
         Self::new_common(tx, name, values, |tx, name, handle| {
             LibscfError::from_ret(unsafe {
                 libscf_sys::scf_transaction_property_change(
@@ -545,7 +548,7 @@ impl<'a> TransactionEntry<'a> {
         name: &Utf8CString,
         value_kind: ValueKind,
         values: Vec<ScfValue<'a>>,
-    ) -> Result<Self, TransactionError> {
+    ) -> Result<Self, TransactionBuildError> {
         Self::new_common(tx, name, values, |tx, name, handle| {
             LibscfError::from_ret(unsafe {
                 libscf_sys::scf_transaction_property_change_type(

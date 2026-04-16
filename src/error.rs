@@ -2,6 +2,18 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+//! Error types used throughout `scuffle`.
+//!
+//! `scuffle`'s errors aim to provide extensive context; e.g., an error that
+//! occurs while operating on an instance will include that instance's FMRI.
+//! These error types make extensive use of source errors as discussed in
+//! omicron's [Defining Error Types and Logging Errors][error-doc]. It is
+//! critical that printing or logging of these error types walk the entire error
+//! chain as discussed in that document, or the underlying error(s) will not be
+//! emitted.
+//!
+//! [error-doc]:
+//! <https://github.com/oxidecomputer/omicron/blob/main/docs/error-types-and-logging.adoc>
 use crate::ValueKind;
 use chrono::DateTime;
 use chrono::Utc;
@@ -28,6 +40,10 @@ mod sealed {
 }
 pub(crate) use sealed::ErrorPath;
 
+/// Name of a `libscf` entity.
+///
+/// `ScfEntity` is used in various error variants that may be emitted for
+/// multiple entity types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScfEntity {
     Instance,
@@ -66,6 +82,7 @@ impl fmt::Display for ScfEntity {
     }
 }
 
+/// Error creating a new entity handle.
 #[derive(Debug, thiserror::Error)]
 #[error("failed to create {entity} handle")]
 pub struct HandleCreateError {
@@ -74,6 +91,7 @@ pub struct HandleCreateError {
     pub err: LibscfError,
 }
 
+/// Error looking up an entity within a parent.
 #[derive(Debug, thiserror::Error)]
 pub enum LookupError {
     #[error(transparent)]
@@ -97,6 +115,7 @@ pub enum LookupError {
     },
 }
 
+/// Error getting an instance handle via its FMRI.
 #[derive(Debug, thiserror::Error)]
 pub enum InstanceFromFmriError {
     #[error(transparent)]
@@ -124,6 +143,8 @@ pub enum InstanceFromFmriError {
     },
 }
 
+/// Error getting a handle to the instance of the currently-running service
+/// instance.
 #[derive(Debug, thiserror::Error)]
 pub enum InstanceFromEnvError {
     #[error(
@@ -140,6 +161,7 @@ pub enum InstanceFromEnvError {
     InstanceFromFmri(#[from] InstanceFromFmriError),
 }
 
+/// Specific ways `libscf` iteration can fail.
 #[derive(Debug, thiserror::Error)]
 pub enum IterErrorKind {
     #[error("failed to initialize iterator")]
@@ -152,9 +174,10 @@ pub enum IterErrorKind {
     GetName(#[source] ScfStringError),
 
     #[error("failed to get item value")]
-    GetValue(#[source] GetValueError),
+    GetValue(#[source] ValueGetError),
 }
 
+/// Error iterating entities.
 #[derive(Debug, thiserror::Error)]
 pub enum IterError {
     #[error(transparent)]
@@ -169,6 +192,9 @@ pub enum IterError {
     },
 }
 
+/// Mapping of `libscf` error codes.
+///
+/// The variants of this enum correspond to [`libscf_sys::scf_error_t`] values.
 #[derive(Debug, thiserror::Error)]
 pub enum LibscfError {
     #[error("no error")]
@@ -293,6 +319,7 @@ impl LibscfError {
     }
 }
 
+/// Error getting string values from `libscf`.
 #[derive(Debug, thiserror::Error)]
 pub enum ScfStringError {
     #[error(
@@ -315,6 +342,7 @@ pub enum ScfStringError {
     NonUtf8String(#[from] Utf8Error),
 }
 
+/// Error looking up the local scope.
 #[derive(Debug, thiserror::Error)]
 pub enum ScopeError {
     #[error(transparent)]
@@ -324,6 +352,7 @@ pub enum ScopeError {
     GetLocalScope(#[source] LibscfError),
 }
 
+/// Error constructing the top-level `libscf` handle.
 #[derive(Debug, thiserror::Error)]
 pub enum ScfError {
     #[error(transparent)]
@@ -336,7 +365,7 @@ pub enum ScfError {
     SetZoneName {
         zonename: Box<str>,
         #[source]
-        err: SetValueError,
+        err: ValueSetError,
     },
 
     #[error("failed to set decoration to attach to zone {zonename}")]
@@ -351,7 +380,7 @@ pub enum ScfError {
     SetDoorPath {
         door_path: Box<str>,
         #[source]
-        err: SetValueError,
+        err: ValueSetError,
     },
 
     #[cfg(any(test, feature = "testing"))]
@@ -363,8 +392,9 @@ pub enum ScfError {
     },
 }
 
+/// Error refreshing an instance.
 #[derive(Debug, thiserror::Error)]
-pub enum RefreshError {
+pub enum InstanceRefreshError {
     #[error("invalid instance FMRI {fmri:?}")]
     InvalidFmri {
         fmri: Box<str>,
@@ -384,8 +414,9 @@ pub enum RefreshError {
     Isolated(#[from] IsolatedConfigdRefreshError),
 }
 
+/// Error setting a `libscf` value.
 #[derive(Debug, thiserror::Error)]
-pub enum SetValueError {
+pub enum ValueSetError {
     #[error(
         "failed to set value `{}` on internal libscf value",
         value.display_smf(),
@@ -409,8 +440,9 @@ pub enum SetValueError {
     InvalidTimestampNanos { timestamp: DateTime<Utc>, seconds: i64, nanos: u32 },
 }
 
+/// Error getting a `libscf` value.
 #[derive(Debug, thiserror::Error)]
-pub enum GetValueError {
+pub enum ValueGetError {
     #[error("unexpected scf type value: {0}")]
     UnexpectedTypeValue(i32),
 
@@ -451,6 +483,7 @@ pub enum GetValueError {
     InvalidNetAddr(Box<str>),
 }
 
+/// Error getting the sole value of a property.
 #[derive(Debug, thiserror::Error)]
 pub enum SingleValueError {
     #[error("property `{description}` has no values")]
@@ -463,8 +496,11 @@ pub enum SingleValueError {
     IterError(#[from] IterError),
 }
 
+/// Error from [`PropertyGroup::update()`].
+///
+/// [`PropertyGroup::update()`]: crate::PropertyGroup::update
 #[derive(Debug, thiserror::Error)]
-pub enum UpdatePropertyGroupError {
+pub enum PropertyGroupUpdateError {
     #[error("failed to update property group `{description}`")]
     Failed {
         description: Box<str>,
@@ -473,6 +509,7 @@ pub enum UpdatePropertyGroupError {
     },
 }
 
+/// Error getting a property group's type from `libscf`.
 #[derive(Debug, thiserror::Error)]
 pub enum PropertyGroupTypeError {
     #[error("failed to get type of property group `{description}` from libscf")]
@@ -486,8 +523,9 @@ pub enum PropertyGroupTypeError {
     UnknownType { description: Box<str>, type_: Box<str> },
 }
 
+/// Error adding a property group to a service or instance.
 #[derive(Debug, thiserror::Error)]
-pub enum AddPropertyGroupError {
+pub enum PropertyGroupAddError {
     #[error(transparent)]
     HandleCreate(#[from] HandleCreateError),
 
@@ -525,8 +563,9 @@ pub enum AddPropertyGroupError {
     DeletedDuringEnsure { parent: Box<str>, name: Box<str> },
 }
 
+/// Error deleting a property group from a service or instance.
 #[derive(Debug, thiserror::Error)]
-pub enum DeletePropertyGroupError {
+pub enum PropertyGroupDeleteError {
     #[error(
         "failed to look up property group `{name}` for deletion on \
          `{parent}`"
@@ -546,6 +585,7 @@ pub enum DeletePropertyGroupError {
     },
 }
 
+/// Kind of transaction operation to modify a property group.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransactionOp {
     Delete,
@@ -566,6 +606,8 @@ fn format_transaction_op(op: &TransactionOp) -> &'static str {
     }
 }
 
+/// Error performing an operation on a property within a property group
+/// transaction.
 #[derive(Debug, thiserror::Error)]
 #[error(
     "failed to {} property `{name}` in transaction on `{property_group}`",
@@ -579,8 +621,9 @@ pub struct TransactionPropertyError {
     pub err: LibscfError,
 }
 
+/// Error building a property group transaction.
 #[derive(Debug, thiserror::Error)]
-pub enum TransactionError {
+pub enum TransactionBuildError {
     #[error(transparent)]
     HandleCreate(#[from] HandleCreateError),
 
@@ -632,13 +675,15 @@ pub enum TransactionError {
         property_group: Box<str>,
         name: Box<str>,
         #[source]
-        err: SetValueError,
+        err: ValueSetError,
     },
+}
 
-    #[error("failed to commit transaction on `{property_group}`")]
-    Commit {
-        property_group: Box<str>,
-        #[source]
-        err: LibscfError,
-    },
+/// Error committing a property group transaction.
+#[derive(Debug, thiserror::Error)]
+#[error("failed to commit transaction on `{property_group}`")]
+pub struct TransactionCommitError {
+    pub property_group: Box<str>,
+    #[source]
+    pub err: LibscfError,
 }

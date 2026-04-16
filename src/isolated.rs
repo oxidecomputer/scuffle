@@ -37,6 +37,7 @@ const SIGINT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 // show up?
 const SVC_CONFIGD_DOOR_CREATE_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Handle to an isolated `svc.configd` instance, intended for testing.
 #[derive(Debug)]
 pub struct IsolatedConfigd {
     dir: Utf8TempDir,
@@ -55,6 +56,7 @@ impl Drop for IsolatedConfigd {
     }
 }
 
+/// Error from [`IsolatedConfigd::refresh()`].
 #[derive(Debug, thiserror::Error)]
 pub enum IsolatedConfigdRefreshError {
     #[error("failed to exec `svccfg -s {fmri} refresh`")]
@@ -67,6 +69,7 @@ pub enum IsolatedConfigdRefreshError {
     SvccfgRefreshError { fmri: String, err: String },
 }
 
+/// Error from [`IsolatedConfigd::shutdown()`].
 #[derive(Debug, thiserror::Error)]
 pub enum IsolatedConfigdShutdownError {
     #[error("failed to kill svc.configd child process")]
@@ -134,6 +137,7 @@ impl IsolatedConfigd {
     }
 }
 
+/// Error constructing an [`IsolatedConfigd`].
 #[derive(Debug, thiserror::Error)]
 pub enum IsolatedConfigdBuildError {
     #[error("failed to create temp directory")]
@@ -188,6 +192,8 @@ pub enum IsolatedConfigdBuildError {
 #[error("invalid fake service name: {0:?}")]
 pub struct InvalidFakeServiceName(pub String);
 
+/// Builder for an [`IsolatedConfigd`], allowing tests to specify the names of
+/// services they want to exist in the isolated `svc.configd`.
 pub struct IsolatedConfigdBuilder {
     services: BTreeSet<String>,
 }

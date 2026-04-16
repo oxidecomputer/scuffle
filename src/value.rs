@@ -7,13 +7,13 @@ use crate::Scf;
 use crate::buf::scf_get_string;
 use crate::buf::with_scf_value_buf;
 use crate::error::ErrorPath;
-use crate::error::GetValueError;
+use crate::error::ValueGetError;
 use crate::error::HandleCreateError;
 use crate::error::IterError;
 use crate::error::IterErrorKind;
 use crate::error::LibscfError;
 use crate::error::ScfEntity;
-use crate::error::SetValueError;
+use crate::error::ValueSetError;
 use crate::iter::ScfIter;
 use crate::scf::ScfObject;
 use chrono::DateTime;
@@ -384,13 +384,13 @@ impl ScfValue<'_> {
         })
     }
 
-    pub(crate) fn get(&self) -> Result<Value, GetValueError> {
+    pub(crate) fn get(&self) -> Result<Value, ValueGetError> {
         // Helper function for all the scf types for which we have to fetch
         // strings. Uses the libscf-to-Rust-string support provided by
         // `crate::buf::*`.
         fn get_as_string(
             ptr: *const libscf_sys::scf_value_t,
-        ) -> Result<String, GetValueError> {
+        ) -> Result<String, ValueGetError> {
             with_scf_value_buf(|buf| {
                 scf_get_string(ScfEntity::Value, buf, |buf, buf_len| unsafe {
                     libscf_sys::scf_value_get_as_string(ptr, buf, buf_len)
@@ -405,7 +405,7 @@ impl ScfValue<'_> {
         let ret = unsafe { libscf_sys::scf_value_type(ptr) };
         let scf_value_type_err = LibscfError::last();
         let Some(ty) = scf_type_t::from_i32(ret) else {
-            return Err(GetValueError::UnexpectedTypeValue(ret));
+            return Err(ValueGetError::UnexpectedTypeValue(ret));
         };
         match ty {
             scf_type_t::SCF_TYPE_INVALID => {
@@ -413,14 +413,14 @@ impl ScfValue<'_> {
                 // `LibscfError::last()` when it returns SCF_TYPE_INVALID. We
                 // captured `LibscfError::last()` immediately after calling
                 // `scf_value_type` above, but only now know it's meaningful.
-                Err(GetValueError::Invalid(scf_value_type_err))
+                Err(ValueGetError::Invalid(scf_value_type_err))
             }
             scf_type_t::SCF_TYPE_BOOLEAN => {
                 let mut b = 0;
                 LibscfError::from_ret(unsafe {
                     libscf_sys::scf_value_get_boolean(ptr, &mut b)
                 })
-                .map_err(GetValueError::GetBool)?;
+                .map_err(ValueGetError::GetBool)?;
                 Ok(Value::Bool(b != 0))
             }
             scf_type_t::SCF_TYPE_COUNT => {
@@ -428,7 +428,7 @@ impl ScfValue<'_> {
                 LibscfError::from_ret(unsafe {
                     libscf_sys::scf_value_get_count(ptr, &mut n)
                 })
-                .map_err(GetValueError::GetCount)?;
+                .map_err(ValueGetError::GetCount)?;
                 Ok(Value::Count(n))
             }
             scf_type_t::SCF_TYPE_INTEGER => {
@@ -436,7 +436,7 @@ impl ScfValue<'_> {
                 LibscfError::from_ret(unsafe {
                     libscf_sys::scf_value_get_integer(ptr, &mut i)
                 })
-                .map_err(GetValueError::GetInteger)?;
+                .map_err(ValueGetError::GetInteger)?;
                 Ok(Value::Integer(i))
             }
             scf_type_t::SCF_TYPE_TIME => {
@@ -445,11 +445,11 @@ impl ScfValue<'_> {
                 LibscfError::from_ret(unsafe {
                     libscf_sys::scf_value_get_time(ptr, &mut secs, &mut nanos)
                 })
-                .map_err(GetValueError::GetTime)?;
+                .map_err(ValueGetError::GetTime)?;
                 let nanos_u32 = u32::try_from(nanos)
-                    .map_err(|_| GetValueError::InvalidTime { secs, nanos })?;
+                    .map_err(|_| ValueGetError::InvalidTime { secs, nanos })?;
                 let ts = DateTime::from_timestamp(secs, nanos_u32)
-                    .ok_or(GetValueError::InvalidTime { secs, nanos })?;
+                    .ok_or(ValueGetError::InvalidTime { secs, nanos })?;
                 Ok(Value::Time(ts))
             }
             scf_type_t::SCF_TYPE_OPAQUE => with_scf_value_buf(|buf| {
@@ -460,9 +460,9 @@ impl ScfValue<'_> {
                         buf.len(),
                     )
                 })
-                .map_err(GetValueError::GetOpaque)?;
+                .map_err(ValueGetError::GetOpaque)?;
                 if sz > buf.len() {
-                    Err(GetValueError::GetOpaqueOutOfBounds(sz))
+                    Err(ValueGetError::GetOpaqueOutOfBounds(sz))
                 } else {
                     Ok(Value::Opaque(buf[..sz].to_vec()))
                 }
@@ -488,7 +488,7 @@ impl ScfValue<'_> {
                 } else if let Ok(ipnet) = s.parse() {
                     Ok(Value::NetV4(ipnet))
                 } else {
-                    Err(GetValueError::InvalidNetAddrV4(s.into_boxed_str()))
+                    Err(ValueGetError::InvalidNetAddrV4(s.into_boxed_str()))
                 }
             }
             scf_type_t::SCF_TYPE_NET_ADDR_V6 => {
@@ -498,7 +498,7 @@ impl ScfValue<'_> {
                 } else if let Ok(ipnet) = s.parse() {
                     Ok(Value::NetV6(ipnet))
                 } else {
-                    Err(GetValueError::InvalidNetAddrV6(s.into_boxed_str()))
+                    Err(ValueGetError::InvalidNetAddrV6(s.into_boxed_str()))
                 }
             }
             scf_type_t::SCF_TYPE_NET_ADDR => {
@@ -508,7 +508,7 @@ impl ScfValue<'_> {
                 } else if let Ok(ipnet) = s.parse() {
                     Ok(Value::Net(ipnet))
                 } else {
-                    Err(GetValueError::InvalidNetAddr(s.into_boxed_str()))
+                    Err(ValueGetError::InvalidNetAddr(s.into_boxed_str()))
                 }
             }
         }
@@ -517,7 +517,7 @@ impl ScfValue<'_> {
     pub(crate) fn set(
         &mut self,
         value: ValueRef<'_>,
-    ) -> Result<(), SetValueError> {
+    ) -> Result<(), ValueSetError> {
         // Wrapper around `libscf_sys::scf_value_set_from_string()` used by many
         // of the variants of `Value` in the match below.
         //
@@ -528,9 +528,9 @@ impl ScfValue<'_> {
             ptr: *mut libscf_sys::scf_value_t,
             ty: scf_type_t,
             s: &str,
-        ) -> Result<Result<(), LibscfError>, SetValueError> {
+        ) -> Result<Result<(), LibscfError>, ValueSetError> {
             let s = CString::new(s).map_err(|err| {
-                SetValueError::InvalidString { value: Box::from(s), err }
+                ValueSetError::InvalidString { value: Box::from(s), err }
             })?;
             let ret = unsafe {
                 libscf_sys::scf_value_set_from_string(ptr, ty, s.as_ptr())
@@ -563,7 +563,7 @@ impl ScfValue<'_> {
                     let seconds = timestamp.timestamp();
                     let nanos = timestamp.timestamp_subsec_nanos();
                     let nanos = i32::try_from(nanos).map_err(|_| {
-                        SetValueError::InvalidTimestampNanos {
+                        ValueSetError::InvalidTimestampNanos {
                             timestamp,
                             seconds,
                             nanos,
@@ -618,7 +618,7 @@ impl ScfValue<'_> {
             }
         };
         result
-            .map_err(|err| SetValueError::Set { value: value.to_value(), err })
+            .map_err(|err| ValueSetError::Set { value: value.to_value(), err })
     }
 }
 

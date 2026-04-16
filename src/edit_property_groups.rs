@@ -7,8 +7,8 @@ use crate::PropertyGroup;
 use crate::PropertyGroupDirect;
 use crate::PropertyGroupType;
 use crate::Scf;
-use crate::error::AddPropertyGroupError;
-use crate::error::DeletePropertyGroupError;
+use crate::error::PropertyGroupAddError;
+use crate::error::PropertyGroupDeleteError;
 use crate::error::ErrorPath;
 use crate::error::LibscfError;
 use crate::scf::ScfObject;
@@ -54,7 +54,7 @@ pub trait EditPropertyGroups: HasDirectPropertyGroups + ErrorPath {
         name: &str,
         pg_type: PropertyGroupType,
         flags: AddPropertyGroupFlags,
-    ) -> Result<PropertyGroup<'_, PropertyGroupDirect>, AddPropertyGroupError>;
+    ) -> Result<PropertyGroup<'_, PropertyGroupDirect>, PropertyGroupAddError>;
 
     /// Ensure a property group exists.
     ///
@@ -66,7 +66,7 @@ pub trait EditPropertyGroups: HasDirectPropertyGroups + ErrorPath {
         name: &str,
         pg_type: PropertyGroupType,
         flags: AddPropertyGroupFlags,
-    ) -> Result<PropertyGroup<'_, PropertyGroupDirect>, AddPropertyGroupError>
+    ) -> Result<PropertyGroup<'_, PropertyGroupDirect>, PropertyGroupAddError>
     {
         // This implementation is quite awkward to avoid borrow-checker
         // problems. First, we attempt to unconditionally add the pg as new; if
@@ -81,7 +81,7 @@ pub trait EditPropertyGroups: HasDirectPropertyGroups + ErrorPath {
         // explicitly that that's what happened.
         match self.add_property_group(name, pg_type, flags) {
             Ok(_)
-            | Err(AddPropertyGroupError::Add {
+            | Err(PropertyGroupAddError::Add {
                 err: LibscfError::Exists,
                 ..
             }) => (),
@@ -89,12 +89,12 @@ pub trait EditPropertyGroups: HasDirectPropertyGroups + ErrorPath {
         }
 
         self.property_group_direct(name)
-            .map_err(|err| AddPropertyGroupError::ExistenceLookup {
+            .map_err(|err| PropertyGroupAddError::ExistenceLookup {
                 parent: self.error_path(),
                 name: Box::from(name),
                 err,
             })?
-            .ok_or_else(|| AddPropertyGroupError::DeletedDuringEnsure {
+            .ok_or_else(|| PropertyGroupAddError::DeletedDuringEnsure {
                 parent: self.error_path(),
                 name: Box::from(name),
             })
@@ -104,12 +104,12 @@ pub trait EditPropertyGroups: HasDirectPropertyGroups + ErrorPath {
     fn delete_property_group(
         &mut self,
         name: &str,
-    ) -> Result<DeletePropertyGroupResult, DeletePropertyGroupError> {
+    ) -> Result<DeletePropertyGroupResult, PropertyGroupDeleteError> {
         let pg = match self.property_group_direct(name) {
             Ok(Some(pg)) => pg,
             Ok(None) => return Ok(DeletePropertyGroupResult::DoesNotExist),
             Err(err) => {
-                return Err(DeletePropertyGroupError::Lookup {
+                return Err(PropertyGroupDeleteError::Lookup {
                     parent: self.error_path(),
                     name: name.to_string().into_boxed_str(),
                     err,
@@ -132,9 +132,9 @@ impl<'a> AddPropertyGroupArgs<'a> {
         parent: &P,
         name: &str,
         flags: AddPropertyGroupFlags,
-    ) -> Result<Self, AddPropertyGroupError> {
+    ) -> Result<Self, PropertyGroupAddError> {
         let name = Utf8CString::from_str(name).map_err(|err| {
-            AddPropertyGroupError::InvalidName {
+            PropertyGroupAddError::InvalidName {
                 parent: parent.error_path(),
                 name: Box::from(name),
                 err,
