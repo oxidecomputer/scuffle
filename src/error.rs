@@ -3,17 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //! Error types used throughout `scuffle`.
-//!
-//! `scuffle`'s errors aim to provide extensive context; e.g., an error that
-//! occurs while operating on an instance will include that instance's FMRI.
-//! These error types make extensive use of source errors as discussed in
-//! omicron's [Defining Error Types and Logging Errors][error-doc]. It is
-//! critical that printing or logging of these error types walk the entire error
-//! chain as discussed in that document, or the underlying error(s) will not be
-//! emitted.
-//!
-//! [error-doc]:
-//! <https://github.com/oxidecomputer/omicron/blob/main/docs/error-types-and-logging.adoc>
+
 use crate::ValueKind;
 use chrono::DateTime;
 use chrono::Utc;

@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2024"
 license = "MPL-2.0"
 
+[package.metadata.docs.rs]
+all-features = true
+default-target = "x86_64-unknown-illumos"
+
 [dependencies]
 chrono = "0.4"
 libc = "0.2"
