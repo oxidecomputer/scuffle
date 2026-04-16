@@ -9,23 +9,42 @@ use crate::PropertyGroups;
 use crate::error::IterError;
 use crate::error::LookupError;
 
+/// Trait to look up direct-attached property grops from a [`Service`] or
+/// [`Instance`].
+///
+/// Direct-attached property groups can be modified via
+/// [`PropertyGroup::transaction()`].
+///
+/// [`Instance`]: crate::Instance
+/// [`Service`]: crate::Service
 pub trait HasDirectPropertyGroups {
+    /// Look up a direct-attached property group by name.
     fn property_group_direct(
         &self,
         name: &str,
     ) -> Result<Option<PropertyGroup<'_, PropertyGroupDirect>>, LookupError>;
 
+    /// Iterate over all direct-attached property group.
     fn property_groups_direct(
         &self,
     ) -> Result<PropertyGroups<'_, PropertyGroupDirect>, IterError>;
 }
 
+/// Trait to look up composed property grops from an [`Instance`] or
+/// [`Snapshot`].
+///
+/// Composed property groups cannot be modified.
+///
+/// [`Instance`]: crate::Instance
+/// [`Snapshot`]: crate::Snapshot
 pub trait HasComposedPropertyGroups {
+    /// Look up a composed property group by name.
     fn property_group_composed(
         &self,
         name: &str,
     ) -> Result<Option<PropertyGroup<'_, PropertyGroupComposed>>, LookupError>;
 
+    /// Iterate over all composed property groups.
     fn property_groups_composed(
         &self,
     ) -> Result<PropertyGroups<'_, PropertyGroupComposed>, IterError>;

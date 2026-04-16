@@ -662,6 +662,8 @@ mod arb_support {
 }
 
 /// Iterator over all values in a [`Property`].
+///
+/// Obtained via [`Property::values()`].
 pub struct Values<'a, St> {
     parent: &'a Property<'a, St>,
     value: ScfValue<'a>,

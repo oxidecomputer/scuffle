@@ -18,6 +18,13 @@ use crate::scf::ScfObject;
 use crate::utf8cstring::PropertyGroupFmri;
 use crate::utf8cstring::Utf8CString;
 
+/// Handle to an SMF snapshot.
+///
+/// Obtained by name via [`Instance::snapshot()`]. The most frequently-used
+/// snapshot is the `"running"` snapshot, which provides a composed view of the
+/// current effective configuration of an instance. This is the snapshot that is
+/// updated when an instance is refreshed (e.g., via `svcadm refresh ...` or
+/// [`Instance::refresh()`]).
 #[derive(Debug)]
 pub struct Snapshot<'a> {
     instance: &'a Instance<'a>,
@@ -71,6 +78,9 @@ impl<'a> Snapshot<'a> {
         }
     }
 
+    /// The FMRI of this snapshot's parent [`Instance`].
+    ///
+    /// Snapshot names are not included in FMRI values.
     pub fn instance_fmri(&self) -> &str {
         self.instance.fmri()
     }
@@ -82,6 +92,7 @@ impl<'a> Snapshot<'a> {
         self.instance.property_group_fmri(name)
     }
 
+    /// The name of this snapshot.
     pub fn name(&self) -> &str {
         self.name.as_str()
     }
@@ -121,6 +132,9 @@ fn snapshot_error_path(
     format!("{} ({name} snapshot)", instance.fmri()).into_boxed_str()
 }
 
+/// Iterator over all [`Snapshot`]s in an [`Instance`].
+///
+/// Obtained via [`Instance::snapshots()`].
 pub struct Snapshots<'a> {
     instance: &'a Instance<'a>,
     iter: ScfIter<'a, libscf_sys::scf_snapshot_t>,

@@ -486,6 +486,14 @@ impl ErrorPath for PropertyGroupParent<'_> {
 
 /// Iterator over all [`PropertyGroup`]s in an instance, service, or composed
 /// view (instance or snapshot).
+///
+/// Obtained via [`HasDirectPropertyGroups::property_groups_direct()`] or
+/// [`HasComposedPropertyGroups::property_groups_composed()`].
+///
+/// [`HasDirectPropertyGroups::property_groups_direct()`]:
+/// crate::HasDirectPropertyGroups::property_groups_direct
+/// [`HasComposedPropertyGroups::property_groups_composed()`]:
+/// crate::HasComposedPropertyGroups::property_groups_composed
 pub struct PropertyGroups<'a, St> {
     parent: PropertyGroupParent<'a>,
     iter: ScfIter<'a, libscf_sys::scf_propertygroup_t>,
