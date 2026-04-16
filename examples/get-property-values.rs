@@ -13,13 +13,14 @@ use scuffle::Scf;
 #[derive(Parser)]
 #[command(about = "Print the values of an SMF service property")]
 struct Args {
-    service: String,
     #[arg(long)]
     instance: Option<String>,
     #[arg(long, requires = "instance", conflicts_with = "snapshot")]
     composed: bool,
     #[arg(long, requires = "instance")]
     snapshot: Option<String>,
+
+    service: String,
     property_group: Option<String>,
     #[arg(requires = "property_group")]
     property: Option<String>,

@@ -16,16 +16,19 @@ use scuffle::Value;
 #[derive(Parser)]
 #[command(about = "Create property groups and set SMF service property values")]
 struct Args {
-    service: String,
+    /// Instance; if omitted, changes the service level
     #[arg(long)]
     instance: Option<String>,
-    property_group: String,
     /// Property group type
     #[arg(
         long,
         default_value_t = PropertyGroupType::Application,
-        value_parser = parse_pg_type)]
+        value_parser = parse_pg_type,
+    )]
     pg_type: PropertyGroupType,
+
+    service: String,
+    property_group: String,
     property: String,
     /// Value in the form type:value (e.g., "astring:hello", "count:42",
     /// "boolean:true", "integer:-1")
@@ -73,21 +76,16 @@ fn run(
             format!("ensuring property group `{pg_name}` on `{name}`")
         })?;
 
+    let pg_fmri = pg.fmri().to_string();
     let tx = pg.transaction()?;
     let mut tx = tx.start()?;
     tx.property_ensure(property, value.as_value_ref())?;
     match tx.commit()? {
         TransactionCommitResult::Success(_) => {
-            println!(
-                "set {name}/:properties/{pg_name}/{property} = {}",
-                value.display_smf(),
-            );
+            println!("set {pg_fmri}/{property} = {}", value.display_smf());
         }
         TransactionCommitResult::OutOfDate(_) => {
-            bail!(
-                "transaction on {name}/:properties/{pg_name} was out of \
-                 date; retry",
-            );
+            bail!("transaction on {pg_fmri} was out of date; retry");
         }
     }
     Ok(())
