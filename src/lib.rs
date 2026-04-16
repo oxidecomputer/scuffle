@@ -39,7 +39,6 @@ pub use property_group::PropertyGroupType;
 pub use property_group::PropertyGroupUpdateResult;
 pub use property_group::PropertyGroups;
 pub use scf::Scf;
-pub use scf::Zone;
 pub use scope::Scope;
 pub use service::Service;
 pub use snapshot::Snapshot;

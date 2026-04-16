@@ -27,12 +27,6 @@ pub(crate) use object::ScfObjectType;
 #[cfg(any(test, feature = "testing"))]
 use crate::isolated::IsolatedConfigd;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Zone<'a> {
-    Global,
-    NonGlobal(&'a str),
-}
-
 // We intentionally do not impl `Send` or `Sync` for `Scf`. Errors flow out
 // through the thread-local `scf_error()` function, so we don't want to mix
 // use of the same handle across different threads.
@@ -59,9 +53,16 @@ impl Drop for Scf<'_> {
 }
 
 impl Scf<'static> {
-    pub fn connect(zone: Zone<'_>) -> Result<Self, ScfError> {
+    pub fn connect_global_zone() -> Result<Self, ScfError> {
         Self::connect_common(
-            ConnectMode::from(zone),
+            ConnectMode::Global,
+            RefreshMechanism::Libscf(PhantomData),
+        )
+    }
+
+    pub fn connect_zone(zonename: &str) -> Result<Self, ScfError> {
+        Self::connect_common(
+            ConnectMode::Zone(zonename),
             RefreshMechanism::Libscf(PhantomData),
         )
     }
@@ -252,15 +253,6 @@ enum ConnectMode<'a> {
     Zone(&'a str),
     #[cfg(any(test, feature = "testing"))]
     DoorPath(&'a str),
-}
-
-impl<'a> From<Zone<'a>> for ConnectMode<'a> {
-    fn from(zone: Zone<'a>) -> Self {
-        match zone {
-            Zone::Global => Self::Global,
-            Zone::NonGlobal(z) => Self::Zone(z),
-        }
-    }
 }
 
 #[cfg(any(test, feature = "testing"))]

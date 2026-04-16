@@ -9,7 +9,6 @@ use scuffle::HasDirectPropertyGroups;
 use scuffle::Property;
 use scuffle::PropertyGroup;
 use scuffle::Scf;
-use scuffle::Zone;
 
 #[derive(Parser)]
 #[command(about = "Print the values of an SMF service property")]
@@ -110,7 +109,7 @@ fn main() -> anyhow::Result<()> {
         property,
     } = Args::parse();
 
-    let scf = Scf::connect(Zone::Global)?;
+    let scf = Scf::connect_global_zone()?;
     let scope = scf.scope_local()?;
 
     let Some(service) = scope.service(&service)? else {

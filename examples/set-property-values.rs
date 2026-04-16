@@ -12,7 +12,6 @@ use scuffle::PropertyGroupType;
 use scuffle::Scf;
 use scuffle::TransactionCommitResult;
 use scuffle::Value;
-use scuffle::Zone;
 
 #[derive(Parser)]
 #[command(about = "Create property groups and set SMF service property values")]
@@ -99,7 +98,7 @@ fn main() -> anyhow::Result<()> {
 
     let value = parse_value(&args.value)?;
 
-    let scf = Scf::connect(Zone::Global)?;
+    let scf = Scf::connect_global_zone()?;
     let scope = scf.scope_local()?;
 
     let Some(mut service) = scope.service(&args.service)? else {
