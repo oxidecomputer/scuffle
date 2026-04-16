@@ -703,7 +703,7 @@ impl<'a, St> Iterator for Values<'a, St> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "illumos"))]
 mod tests {
     use super::*;
     use crate::isolated::IsolatedConfigd;
