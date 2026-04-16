@@ -7,10 +7,10 @@ use crate::PropertyGroup;
 use crate::PropertyGroupDirect;
 use crate::PropertyGroupType;
 use crate::Scf;
-use crate::error::PropertyGroupAddError;
-use crate::error::PropertyGroupDeleteError;
 use crate::error::ErrorPath;
 use crate::error::LibscfError;
+use crate::error::PropertyGroupAddError;
+use crate::error::PropertyGroupDeleteError;
 use crate::scf::ScfObject;
 use crate::utf8cstring::Utf8CString;
 

@@ -13,16 +13,16 @@ use crate::Transaction;
 use crate::TransactionReset;
 use crate::buf::scf_get_string;
 use crate::buf::with_scf_pg_type_buf;
-use crate::error::PropertyGroupDeleteError;
 use crate::error::ErrorPath;
 use crate::error::IterError;
 use crate::error::IterErrorKind;
 use crate::error::LibscfError;
 use crate::error::LookupError;
+use crate::error::PropertyGroupDeleteError;
 use crate::error::PropertyGroupTypeError;
+use crate::error::PropertyGroupUpdateError;
 use crate::error::ScfEntity;
 use crate::error::TransactionBuildError;
-use crate::error::PropertyGroupUpdateError;
 use crate::iter::ScfIter;
 use crate::iter::ScfUninitializedIter;
 use crate::scf::ScfObject;
@@ -380,7 +380,8 @@ impl<'a> PropertyGroup<'a, PropertyGroupDirect> {
     /// through composed views are not supported.
     pub fn transaction(
         &mut self,
-    ) -> Result<Transaction<'_, 'a, TransactionReset>, TransactionBuildError> {
+    ) -> Result<Transaction<'_, 'a, TransactionReset>, TransactionBuildError>
+    {
         Transaction::new(self)
     }
 
