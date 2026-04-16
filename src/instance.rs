@@ -35,7 +35,6 @@ use crate::utf8cstring::Utf8CString;
 
 #[derive(Debug)]
 pub struct Instance<'a> {
-    scf: &'a Scf<'a>,
     name: Utf8CString,
     fmri: InstanceFmri,
     handle: ScfObject<'a, libscf_sys::scf_instance_t>,
@@ -64,7 +63,7 @@ impl<'a> Instance<'a> {
         };
 
         match result {
-            Ok(()) => Ok(Some(Self { scf: service.scf(), name, fmri, handle })),
+            Ok(()) => Ok(Some(Self { name, fmri, handle })),
             Err(LibscfError::NotFound) => Ok(None),
             Err(err) => Err(LookupError::Get {
                 entity: ScfEntity::Instance,
@@ -113,11 +112,11 @@ impl<'a> Instance<'a> {
             err,
         })?;
 
-        Ok(Self { scf, name, fmri, handle })
+        Ok(Self { name, fmri, handle })
     }
 
     pub(crate) fn scf(&self) -> &'a Scf<'a> {
-        self.scf
+        self.handle.scf()
     }
 
     pub(crate) unsafe fn scf_get_snapshot(
@@ -322,7 +321,6 @@ impl<'a> Iterator for Instances<'a> {
             })
             .map(|result| {
                 result.map(|(name, handle)| Instance {
-                    scf: self.service.scf(),
                     fmri: self.service.instance_fmri(&name),
                     name,
                     handle,
