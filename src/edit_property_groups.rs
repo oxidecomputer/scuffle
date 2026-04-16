@@ -13,19 +13,39 @@ use crate::error::LibscfError;
 use crate::scf::ScfObject;
 use crate::utf8cstring::Utf8CString;
 
+/// Flags controlling creation of new property groups.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[non_exhaustive] // leave the door open for libscf to add more flags
 pub enum AddPropertyGroupFlags {
+    /// Persistent property group.
+    ///
+    /// This is the default and typical value for most property groups.
     Persistent,
+
+    /// Non-persistent property group.
+    ///
+    /// Discussion of non-persistent property groups from `man scf_pg_create`:
+    ///
+    /// > If `NonPersistent` is set, the property group is not included in
+    /// > snapshots and will lose its contents upon system shutdown or reboot.
+    /// > Non-persistent property groups are mainly used for smf-internal state.
     NonPersistent,
 }
 
+/// Result of deleting a property group.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DeletePropertyGroupResult {
+    /// The property group was deleted.
     Deleted,
+
+    /// The property group was not deleted because it already didn't exist.
     DoesNotExist,
 }
 
+/// Trait to add property groups to a [`Service`] or [`Instance`].
+///
+/// [`Instance`]: crate::Instance
+/// [`Service`]: crate::Service
 pub trait EditPropertyGroups: HasDirectPropertyGroups + ErrorPath {
     fn add_property_group(
         &mut self,
