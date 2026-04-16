@@ -1195,3 +1195,224 @@ fn single_value_and_errors() {
         assert_matches!(values.next(), None);
     }
 }
+
+/// After a commit returns `OutOfDate`, drop the stale transaction,
+/// update the property group, and retry with a new transaction. The
+/// retry should succeed.
+#[test]
+fn transaction_reset_and_retry_after_out_of_date() {
+    let isolated =
+        IsolatedConfigd::builder("test-svc").unwrap().build().unwrap();
+    let scf = Scf::connect_isolated(&isolated).unwrap();
+    let scope = scf.scope_local().unwrap();
+    let service = scope.service("test-svc").unwrap().unwrap();
+    let mut instance = service.instance("default").unwrap().unwrap();
+
+    // Create a PG with an initial value.
+    let mut pg = instance
+        .add_property_group(
+            "retrypg",
+            PropertyGroupType::Application,
+            AddPropertyGroupFlags::Persistent,
+        )
+        .expect("add property group");
+
+    {
+        let tx = pg.transaction().expect("create transaction");
+        let mut tx = tx.start().expect("start transaction");
+        tx.property_new("prop", ValueRef::Count(1)).expect("property_new");
+        let result = tx.commit().expect("commit");
+        assert_matches!(result, TransactionCommitResult::Success(_));
+    }
+
+    pg.update().expect("update");
+
+    // Start a transaction to change the value, then cause a concurrent
+    // modification so our commit returns OutOfDate.
+    {
+        let tx = pg.transaction().expect("create transaction");
+        let mut tx = tx.start().expect("start transaction");
+        tx.property_ensure("prop", ValueRef::Count(42))
+            .expect("property_ensure");
+
+        // Concurrently modify the PG through a second handle.
+        {
+            let inst2 = service
+                .instance("default")
+                .expect("lookup instance")
+                .expect("instance should exist");
+            let mut pg2 = inst2
+                .property_group_direct("retrypg")
+                .expect("lookup pg")
+                .expect("pg should exist");
+            let tx2 = pg2.transaction().expect("create transaction");
+            let mut tx2 = tx2.start().expect("start transaction");
+            tx2.property_ensure("prop", ValueRef::Count(99))
+                .expect("property_ensure");
+            let result = tx2.commit().expect("commit");
+            assert_matches!(result, TransactionCommitResult::Success(_));
+        }
+
+        let result = tx.commit().expect("commit");
+        assert_matches!(
+            result,
+            TransactionCommitResult::OutOfDate(_),
+            "commit should be out of date",
+        );
+        // Drop the stale transaction (releases &mut pg).
+    }
+
+    // Update the PG to pick up the concurrent change, then retry with a
+    // new transaction.
+    pg.update().expect("update after out of date");
+
+    {
+        let tx = pg.transaction().expect("create retry transaction");
+        let mut tx = tx.start().expect("start retry transaction");
+        tx.property_ensure("prop", ValueRef::Count(42))
+            .expect("property_ensure on retry");
+        let result = tx.commit().expect("retry commit");
+        assert_matches!(
+            result,
+            TransactionCommitResult::Success(_),
+            "retry commit should succeed",
+        );
+    }
+
+    // Read back and verify the retried value won.
+    {
+        let inst = service
+            .instance("default")
+            .expect("lookup instance")
+            .expect("instance should exist");
+        let pg = inst
+            .property_group_direct("retrypg")
+            .expect("lookup pg")
+            .expect("pg should exist");
+        let readback = pg
+            .property("prop")
+            .expect("lookup property")
+            .expect("property should exist")
+            .single_value()
+            .expect("single_value");
+        assert_eq!(readback, Value::Count(42));
+    }
+}
+
+/// Exercise `property_ensure_multiple` and `property_change_multiple`
+/// with fixed multi-value Count properties.
+#[test]
+fn transaction_multi_value_ensure_and_change() {
+    let isolated =
+        IsolatedConfigd::builder("test-svc").unwrap().build().unwrap();
+    let scf = Scf::connect_isolated(&isolated).unwrap();
+    let scope = scf.scope_local().unwrap();
+    let service = scope.service("test-svc").unwrap().unwrap();
+    let mut instance = service.instance("default").unwrap().unwrap();
+
+    let mut pg = instance
+        .add_property_group(
+            "mvpg",
+            PropertyGroupType::Application,
+            AddPropertyGroupFlags::Persistent,
+        )
+        .expect("add property group");
+
+    // (a) ensure_multiple creates the property with [1, 2, 3].
+    {
+        let tx = pg.transaction().expect("create transaction");
+        let mut tx = tx.start().expect("start transaction");
+        tx.property_ensure_multiple(
+            "prop",
+            ValueKind::Count,
+            [ValueRef::Count(1), ValueRef::Count(2), ValueRef::Count(3)],
+        )
+        .expect("property_ensure_multiple");
+        let result = tx.commit().expect("commit");
+        assert_matches!(result, TransactionCommitResult::Success(_));
+    }
+
+    {
+        let inst = service.instance("default").unwrap().unwrap();
+        let pg_read = inst
+            .property_group_direct("mvpg")
+            .expect("lookup pg")
+            .expect("pg should exist");
+        let readback: Vec<Value> = pg_read
+            .property("prop")
+            .expect("lookup property")
+            .expect("property should exist")
+            .values()
+            .expect("get values")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("iterate values");
+        assert_eq!(
+            readback,
+            vec![Value::Count(1), Value::Count(2), Value::Count(3)],
+        );
+    }
+
+    // (b) ensure_multiple overwrites with [4, 5].
+    pg.update().expect("update");
+    {
+        let tx = pg.transaction().expect("create transaction");
+        let mut tx = tx.start().expect("start transaction");
+        tx.property_ensure_multiple(
+            "prop",
+            ValueKind::Count,
+            [ValueRef::Count(4), ValueRef::Count(5)],
+        )
+        .expect("property_ensure_multiple overwrite");
+        let result = tx.commit().expect("commit");
+        assert_matches!(result, TransactionCommitResult::Success(_));
+    }
+
+    {
+        let inst = service.instance("default").unwrap().unwrap();
+        let pg_read = inst
+            .property_group_direct("mvpg")
+            .expect("lookup pg")
+            .expect("pg should exist");
+        let readback: Vec<Value> = pg_read
+            .property("prop")
+            .expect("lookup property")
+            .expect("property should exist")
+            .values()
+            .expect("get values")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("iterate values");
+        assert_eq!(readback, vec![Value::Count(4), Value::Count(5)]);
+    }
+
+    // (c) change_multiple replaces with [6].
+    pg.update().expect("update");
+    {
+        let tx = pg.transaction().expect("create transaction");
+        let mut tx = tx.start().expect("start transaction");
+        tx.property_change_multiple(
+            "prop",
+            ValueKind::Count,
+            [ValueRef::Count(6)],
+        )
+        .expect("property_change_multiple");
+        let result = tx.commit().expect("commit");
+        assert_matches!(result, TransactionCommitResult::Success(_));
+    }
+
+    {
+        let inst = service.instance("default").unwrap().unwrap();
+        let pg_read = inst
+            .property_group_direct("mvpg")
+            .expect("lookup pg")
+            .expect("pg should exist");
+        let readback: Vec<Value> = pg_read
+            .property("prop")
+            .expect("lookup property")
+            .expect("property should exist")
+            .values()
+            .expect("get values")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("iterate values");
+        assert_eq!(readback, vec![Value::Count(6)]);
+    }
+}

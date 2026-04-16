@@ -2,12 +2,15 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use assert_matches::assert_matches;
 use scuffle::AddPropertyGroupFlags;
 use scuffle::EditPropertyGroups;
 use scuffle::HasComposedPropertyGroups;
 use scuffle::HasDirectPropertyGroups;
 use scuffle::PropertyGroupType;
 use scuffle::Scf;
+use scuffle::TransactionCommitResult;
+use scuffle::ValueRef;
 use scuffle::isolated::IsolatedConfigd;
 use std::collections::BTreeSet;
 
@@ -117,5 +120,74 @@ fn iterators() {
             names.is_superset(&BTreeSet::from(["iterpg1", "iterpg2"])),
             "unexpected names: {names:?}"
         );
+    }
+}
+
+/// Exercise the `PropertyGroup::properties()` iterator and verify
+/// `Property::name()` and `Property::fmri()` on each yielded item.
+#[test]
+fn property_iterator() {
+    let isolated =
+        IsolatedConfigd::builder("test-svc").unwrap().build().unwrap();
+    let scf = Scf::connect_isolated(&isolated).unwrap();
+    let scope = scf.scope_local().unwrap();
+    let service = scope.service("test-svc").unwrap().unwrap();
+    let mut instance = service.instance("default").unwrap().unwrap();
+
+    // Create a property group with three properties.
+    {
+        let mut pg = instance
+            .add_property_group(
+                "propiterpg",
+                PropertyGroupType::Application,
+                AddPropertyGroupFlags::Persistent,
+            )
+            .expect("add property group");
+
+        let tx = pg.transaction().expect("create transaction");
+        let mut tx = tx.start().expect("start transaction");
+        tx.property_new("p1", ValueRef::Bool(true)).expect("property_new p1");
+        tx.property_new("p2", ValueRef::Count(42)).expect("property_new p2");
+        tx.property_new("p3", ValueRef::Integer(-1)).expect("property_new p3");
+        let result = tx.commit().expect("commit");
+        assert_matches!(result, TransactionCommitResult::Success(_));
+    }
+
+    // Re-fetch the property group and iterate its properties.
+    let pg = instance
+        .property_group_direct("propiterpg")
+        .expect("lookup pg")
+        .expect("pg should exist");
+
+    let props: Vec<_> = pg
+        .properties()
+        .expect("iterate properties")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect properties");
+
+    let names: BTreeSet<&str> = props.iter().map(|p| p.name()).collect();
+    assert_eq!(
+        names,
+        BTreeSet::from(["p1", "p2", "p3"]),
+        "unexpected property names: {names:?}",
+    );
+
+    // Verify Property::fmri() includes the property group and property name.
+    for prop in &props {
+        match prop.name() {
+            "p1" => assert_eq!(
+                prop.fmri(),
+                "svc:/test-svc:default/:properties/propiterpg/p1"
+            ),
+            "p2" => assert_eq!(
+                prop.fmri(),
+                "svc:/test-svc:default/:properties/propiterpg/p2"
+            ),
+            "p3" => assert_eq!(
+                prop.fmri(),
+                "svc:/test-svc:default/:properties/propiterpg/p3"
+            ),
+            other => panic!("unexpected property name {other}"),
+        }
     }
 }

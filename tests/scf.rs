@@ -153,6 +153,72 @@ fn self_instance_from_env() {
     );
 }
 
+/// Verify that `ensure_property_group` is idempotent: calling it when the
+/// property group already exists returns a valid handle, and calling it on
+/// a new name creates the property group.
+#[test]
+fn ensure_property_group_idempotent() {
+    let isolated =
+        IsolatedConfigd::builder("test-svc").unwrap().build().unwrap();
+    let scf = Scf::connect_isolated(&isolated).unwrap();
+    let scope = scf.scope_local().unwrap();
+    let service = scope.service("test-svc").unwrap().unwrap();
+    let mut instance = service.instance("default").unwrap().unwrap();
+
+    // Create a property group via add_property_group.
+    instance
+        .add_property_group(
+            "epg",
+            PropertyGroupType::Application,
+            AddPropertyGroupFlags::Persistent,
+        )
+        .expect("add property group");
+
+    // ensure_property_group on the same name should succeed (not error
+    // with Exists).
+    {
+        let pg = instance
+            .ensure_property_group(
+                "epg",
+                PropertyGroupType::Application,
+                AddPropertyGroupFlags::Persistent,
+            )
+            .expect("ensure existing property group");
+        assert_eq!(pg.name(), "epg");
+    }
+
+    // Verify it's still there via direct lookup.
+    {
+        let pg = instance
+            .property_group_direct("epg")
+            .expect("lookup epg")
+            .expect("epg should exist");
+        assert_eq!(pg.name(), "epg");
+    }
+
+    // ensure_property_group on a name that does NOT yet exist should
+    // create it.
+    {
+        let pg = instance
+            .ensure_property_group(
+                "epg_new",
+                PropertyGroupType::Application,
+                AddPropertyGroupFlags::Persistent,
+            )
+            .expect("ensure new property group");
+        assert_eq!(pg.name(), "epg_new");
+    }
+
+    // Verify the newly-created PG exists.
+    {
+        let pg = instance
+            .property_group_direct("epg_new")
+            .expect("lookup epg_new")
+            .expect("epg_new should exist");
+        assert_eq!(pg.name(), "epg_new");
+    }
+}
+
 /// Verify that `add_property_group` with a NUL-containing name returns
 /// `AddPropertyGroupError::InvalidName`.
 #[test]
@@ -172,6 +238,80 @@ fn add_property_group_invalid_name() {
         )
         .expect_err("should fail with InvalidName");
     assert_matches!(err, AddPropertyGroupError::InvalidName { .. });
+}
+
+/// Verify that calling `add_property_group` twice with the same name
+/// returns `AddPropertyGroupError::Add` with `LibscfError::Exists`.
+#[test]
+fn add_property_group_already_exists() {
+    let isolated =
+        IsolatedConfigd::builder("test-svc").unwrap().build().unwrap();
+    let scf = Scf::connect_isolated(&isolated).unwrap();
+    let scope = scf.scope_local().unwrap();
+    let service = scope.service("test-svc").unwrap().unwrap();
+    let mut instance = service.instance("default").unwrap().unwrap();
+
+    instance
+        .add_property_group(
+            "dup",
+            PropertyGroupType::Application,
+            AddPropertyGroupFlags::Persistent,
+        )
+        .expect("first add should succeed");
+
+    let err = instance
+        .add_property_group(
+            "dup",
+            PropertyGroupType::Application,
+            AddPropertyGroupFlags::Persistent,
+        )
+        .expect_err("second add should fail with Exists");
+    assert_matches!(
+        err,
+        AddPropertyGroupError::Add { err: LibscfError::Exists, .. }
+    );
+}
+
+/// Verify that lookup methods return `Ok(None)` for nonexistent entity
+/// names (as opposed to erroring).
+#[test]
+fn lookup_nonexistent_returns_none() {
+    let isolated =
+        IsolatedConfigd::builder("test-svc").unwrap().build().unwrap();
+    let scf = Scf::connect_isolated(&isolated).unwrap();
+    let scope = scf.scope_local().unwrap();
+    let service = scope.service("test-svc").unwrap().unwrap();
+    let instance = service.instance("default").unwrap().unwrap();
+
+    // Scope::service
+    assert!(
+        scope.service("no-such-svc").unwrap().is_none(),
+        "nonexistent service should be None",
+    );
+
+    // Service::instance
+    assert!(
+        service.instance("no-such-inst").unwrap().is_none(),
+        "nonexistent instance should be None",
+    );
+
+    // Instance::snapshot
+    assert!(
+        instance.snapshot("no-such-snap").unwrap().is_none(),
+        "nonexistent snapshot should be None",
+    );
+
+    // Instance::property_group_direct
+    assert!(
+        instance.property_group_direct("no-such-pg").unwrap().is_none(),
+        "nonexistent direct property group should be None",
+    );
+
+    // Instance::property_group_composed
+    assert!(
+        instance.property_group_composed("no-such-pg").unwrap().is_none(),
+        "nonexistent composed property group should be None",
+    );
 }
 
 /// Verify that lookup methods return `LookupError::InvalidName` when
