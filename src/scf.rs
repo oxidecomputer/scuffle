@@ -14,8 +14,6 @@ use crate::error::ScfEntity;
 use crate::error::ScfError;
 use crate::error::ScopeError;
 use crate::value::ScfValue;
-use std::ffi::CStr;
-use std::ffi::CString;
 use std::marker::PhantomData;
 use std::ptr::NonNull;
 
@@ -172,6 +170,7 @@ impl<'a> Scf<'a> {
         Scope::new_local(self)
     }
 
+    /*
     /// Refresh an SMF instance identified by its FMRI.
     pub fn refresh_instance(
         &self,
@@ -182,6 +181,7 @@ impl<'a> Scf<'a> {
         })?;
         self.refresh_instance_cstr(&fmri)
     }
+    */
 
     /// Obtain an [`Instance`] handle identified by its FMRI.
     pub fn instance_from_fmri(
@@ -226,11 +226,11 @@ impl<'a> Scf<'a> {
         Ok(self.instance_from_fmri(&fmri)?)
     }
 
-    pub(crate) fn refresh_instance_cstr(
+    pub(crate) fn refresh_instance(
         &self,
-        fmri: &CStr,
+        instance: &mut Instance<'_>,
     ) -> Result<(), InstanceRefreshError> {
-        self.refresher.refresh_instance(fmri)
+        self.refresher.refresh_instance(instance)
     }
 
     pub(crate) unsafe fn scf_get_scope_local(
@@ -297,23 +297,23 @@ enum RefreshMechanism<'a> {
 impl RefreshMechanism<'_> {
     fn refresh_instance(
         &self,
-        fmri: &CStr,
+        instance: &mut Instance<'_>,
     ) -> Result<(), InstanceRefreshError> {
         match self {
             RefreshMechanism::Libscf(_) => {
-                // Per the manpage, `smf_refresh_instance()` still sets an error
-                // retrievable via `scf_error()` on failure, so we can use the
-                // same error handling as all our other libscf calls.
-                let ret =
-                    unsafe { libscf_sys::smf_refresh_instance(fmri.as_ptr()) };
-                LibscfError::from_ret(ret).map_err(|err| {
-                    InstanceRefreshError::Failed {
-                        fmri: String::from_utf8_lossy(fmri.to_bytes())
-                            .into_owned()
-                            .into_boxed_str(),
-                        err,
-                    }
-                })
+                // The only public / committed interface for refreshing
+                // instances is `smf_refresh_instance()`, which doesn't go
+                // through our SCF handle at all, and therefore can only refresh
+                // instances in the global zone. If we were created via
+                // `Scf::connect_zone()`, that won't work - it'd try to refresh
+                // an instance of the same FMRI in the gz instead of the named
+                // zone.
+                //
+                // Instead, use a private API (from `libscf_priv.h`) that allows
+                // refreshing directly via the instance handle. This is
+                // consistent with `svcadm -z zone refresh ...`, but is
+                // obviously not ideal since it could break in the future!
+                instance.scf_refresh_via_private_api()
             }
 
             #[cfg(any(test, feature = "testing"))]
@@ -321,7 +321,7 @@ impl RefreshMechanism<'_> {
                 use std::ffi::OsStr;
                 use std::os::unix::ffi::OsStrExt;
 
-                let fmri = OsStr::from_bytes(fmri.to_bytes());
+                let fmri = OsStr::from_bytes(instance.fmri_c_str().to_bytes());
                 configd.refresh(fmri).map_err(From::from)
             }
         }

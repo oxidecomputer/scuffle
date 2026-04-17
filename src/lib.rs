@@ -213,6 +213,9 @@ mod value;
 // released.
 mod libscf_sys_supplemental;
 
+// TODO-cleanup Remove once there are equivalent committed interfaces.
+mod libscf_sys_priv;
+
 pub mod error;
 
 #[cfg(any(test, feature = "testing"))]

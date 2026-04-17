@@ -28,6 +28,7 @@ use crate::error::PropertyGroupAddError;
 use crate::error::ScfEntity;
 use crate::iter::ScfIter;
 use crate::iter::ScfUninitializedIter;
+use crate::libscf_sys_priv;
 use crate::scf::ScfObject;
 use crate::utf8cstring::InstanceFmri;
 use crate::utf8cstring::PropertyGroupFmri;
@@ -201,14 +202,31 @@ impl<'a> Instance<'a> {
         self.fmri.as_str()
     }
 
+    #[cfg(any(test, feature = "testing"))]
+    pub(crate) fn fmri_c_str(&self) -> &std::ffi::CStr {
+        self.fmri.as_c_str()
+    }
+
     /// Refresh this instance.
     ///
     /// This is equivalent to running `svcadm refresh THIS_INSTANCE`; i.e.,
     /// it will both update the `"running"` snapshot to match any property
     /// changes made since the last time the instance was refreshed and will
     /// invoke the instance's SMF `refresh` method.
-    pub fn refresh(&self) -> Result<(), InstanceRefreshError> {
-        self.scf().refresh_instance_cstr(self.fmri.as_c_str())
+    pub fn refresh(&mut self) -> Result<(), InstanceRefreshError> {
+        self.scf().refresh_instance(self)
+    }
+
+    pub(crate) fn scf_refresh_via_private_api(
+        &mut self,
+    ) -> Result<(), InstanceRefreshError> {
+        LibscfError::from_ret(unsafe {
+            libscf_sys_priv::_smf_refresh_instance_i(self.handle.as_mut_ptr())
+        })
+        .map_err(|err| InstanceRefreshError::Failed {
+            fmri: self.fmri().to_string().into_boxed_str(),
+            err,
+        })
     }
 
     pub(crate) fn property_group_fmri(

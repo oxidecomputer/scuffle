@@ -406,7 +406,7 @@ fn transaction_snapshot_visibility_after_refresh() {
 
         // Refresh the instance so its "running" snapshot is updated.
         {
-            let inst = instance.borrow();
+            let mut inst = instance.borrow_mut();
             inst.refresh().expect("refresh");
         }
 
@@ -555,7 +555,7 @@ fn service_property_composed_visibility() {
         // Refresh the instance.
         {
             let svc = service.borrow();
-            let inst = svc
+            let mut inst = svc
                 .instance("default")
                 .expect("lookup instance")
                 .expect("instance should exist");
