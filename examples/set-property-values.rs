@@ -16,9 +16,16 @@ use scuffle::Value;
 #[derive(Parser)]
 #[command(about = "Create property groups and set SMF service property values")]
 struct Args {
+    #[arg(long, short)]
+    zone: Option<String>,
+
     /// Instance; if omitted, changes the service level
     #[arg(long)]
     instance: Option<String>,
+
+    #[arg(long, requires = "instance")]
+    refresh: bool,
+
     /// Property group type
     #[arg(
         long,
@@ -30,6 +37,7 @@ struct Args {
     service: String,
     property_group: String,
     property: String,
+
     /// Value in the form type:value (e.g., "astring:hello", "count:42",
     /// "boolean:true", "integer:-1")
     value: String,
@@ -96,7 +104,10 @@ fn main() -> anyhow::Result<()> {
 
     let value = parse_value(&args.value)?;
 
-    let scf = Scf::connect_global_zone()?;
+    let scf = match args.zone.as_deref() {
+        Some(z) => Scf::connect_zone(z),
+        None => Scf::connect_global_zone(),
+    }?;
     let scope = scf.scope_local()?;
 
     let Some(mut service) = scope.service(&args.service)? else {
@@ -119,6 +130,10 @@ fn main() -> anyhow::Result<()> {
             &args.property,
             &value,
         )?;
+
+        if args.refresh {
+            inst.refresh()?;
+        }
     } else {
         let name = service.fmri().to_string();
         run(

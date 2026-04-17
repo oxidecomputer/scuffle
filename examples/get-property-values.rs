@@ -13,15 +13,21 @@ use scuffle::Scf;
 #[derive(Parser)]
 #[command(about = "Print the values of an SMF service property")]
 struct Args {
+    #[arg(long, short)]
+    zone: Option<String>,
+
     #[arg(long)]
     instance: Option<String>,
+
     #[arg(long, requires = "instance", conflicts_with = "snapshot")]
     composed: bool,
+
     #[arg(long, requires = "instance")]
     snapshot: Option<String>,
 
     service: String,
     property_group: Option<String>,
+
     #[arg(requires = "property_group")]
     property: Option<String>,
 }
@@ -102,6 +108,7 @@ fn run_composed(
 
 fn main() -> anyhow::Result<()> {
     let Args {
+        zone,
         service,
         instance,
         composed,
@@ -110,7 +117,10 @@ fn main() -> anyhow::Result<()> {
         property,
     } = Args::parse();
 
-    let scf = Scf::connect_global_zone()?;
+    let scf = match zone.as_deref() {
+        Some(z) => Scf::connect_zone(z),
+        None => Scf::connect_global_zone(),
+    }?;
     let scope = scf.scope_local()?;
 
     let Some(service) = scope.service(&service)? else {
