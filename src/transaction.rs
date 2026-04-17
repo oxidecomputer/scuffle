@@ -7,8 +7,9 @@ use crate::PropertyGroupDirect;
 use crate::Scf;
 use crate::ValueKind;
 use crate::ValueRef;
-use crate::error::ErrorPath;
 use crate::error::LibscfError;
+use crate::error::ScfEntityDescription;
+use crate::error::ToEntityDescription;
 use crate::error::TransactionBuildError;
 use crate::error::TransactionCommitError;
 use crate::error::TransactionOp;
@@ -122,8 +123,8 @@ impl<'a, 'pg, St> Transaction<'a, 'pg, St> {
         self.inner.property_group.scf()
     }
 
-    fn pg_error_path(&self) -> Box<str> {
-        self.inner.property_group.error_path()
+    fn pg_entity_description(&self) -> ScfEntityDescription {
+        self.inner.property_group.to_entity_description()
     }
 }
 
@@ -161,7 +162,7 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionReset> {
                 Ok(Transaction { inner: self.inner, _state: PhantomData })
             }
             Err(err) => Err(TransactionBuildError::Start {
-                property_group: self.pg_error_path(),
+                property_group: self.pg_entity_description(),
                 err,
             }),
         }
@@ -176,7 +177,7 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
     ) -> Result<Utf8CString, TransactionBuildError> {
         Utf8CString::from_str(name).map_err(|err| {
             TransactionBuildError::InvalidName {
-                property_group: self.pg_error_path(),
+                property_group: self.pg_entity_description(),
                 err,
             }
         })
@@ -192,7 +193,7 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
         for val in values {
             if val.kind() != expected_kind {
                 return Err(TransactionBuildError::TypeMismatch {
-                    property_group: self.pg_error_path(),
+                    property_group: self.pg_entity_description(),
                     name: name.to_string().into_boxed_str(),
                     property_type: expected_kind,
                     value_type: val.kind(),
@@ -202,7 +203,7 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
             let mut scf_val = ScfValue::new(self.scf())?;
             scf_val.set(val).map_err(|err| {
                 TransactionBuildError::SetValue {
-                    property_group: self.pg_error_path(),
+                    property_group: self.pg_entity_description(),
                     name: name.to_string().into_boxed_str(),
                     err,
                 }
@@ -391,7 +392,7 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
             .property_group
             .property(name)
             .map_err(|err| TransactionBuildError::ExistenceLookup {
-                property_group: self.pg_error_path(),
+                property_group: self.pg_entity_description(),
                 name: name.to_string().into_boxed_str(),
                 err,
             })?
@@ -419,7 +420,7 @@ impl<'a, 'pg> Transaction<'a, 'pg, TransactionStarted> {
             _ => {
                 let err = LibscfError::last();
                 Err(TransactionCommitError {
-                    property_group: self.pg_error_path(),
+                    property_group: self.pg_entity_description(),
                     err,
                 })
             }
@@ -464,7 +465,7 @@ impl<'a> TransactionEntry<'a> {
         for val in &mut values {
             unsafe { val.scf_add_to_transaction_entry(handle.as_mut_ptr()) }
                 .map_err(|err| TransactionPropertyError {
-                    property_group: tx.pg_error_path(),
+                    property_group: tx.pg_entity_description(),
                     name: name.to_string().into_boxed_str(),
                     op: TransactionOp::AddValue,
                     err,
@@ -489,7 +490,7 @@ impl<'a> TransactionEntry<'a> {
                 )
             })
             .map_err(|err| TransactionPropertyError {
-                property_group: tx.pg_error_path(),
+                property_group: tx.pg_entity_description(),
                 name: name.to_string().into_boxed_str(),
                 op: TransactionOp::Delete,
                 err,
@@ -514,7 +515,7 @@ impl<'a> TransactionEntry<'a> {
                 )
             })
             .map_err(|err| TransactionPropertyError {
-                property_group: tx.pg_error_path(),
+                property_group: tx.pg_entity_description(),
                 name: name.to_string().into_boxed_str(),
                 op: TransactionOp::New,
                 err,
@@ -539,7 +540,7 @@ impl<'a> TransactionEntry<'a> {
                 )
             })
             .map_err(|err| TransactionPropertyError {
-                property_group: tx.pg_error_path(),
+                property_group: tx.pg_entity_description(),
                 name: name.to_string().into_boxed_str(),
                 op: TransactionOp::Change,
                 err,
@@ -564,7 +565,7 @@ impl<'a> TransactionEntry<'a> {
                 )
             })
             .map_err(|err| TransactionPropertyError {
-                property_group: tx.pg_error_path(),
+                property_group: tx.pg_entity_description(),
                 name: name.to_string().into_boxed_str(),
                 op: TransactionOp::ChangeType,
                 err,

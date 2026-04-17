@@ -6,16 +6,16 @@ use crate::PropertyGroup;
 use crate::Scf;
 use crate::Value;
 use crate::Values;
-use crate::error::ErrorPath;
 use crate::error::IterError;
 use crate::error::IterErrorKind;
 use crate::error::LibscfError;
 use crate::error::LookupError;
 use crate::error::ScfEntity;
+use crate::error::ScfEntityDescription;
 use crate::error::SingleValueError;
+use crate::error::ToEntityDescription;
 use crate::iter::ScfIter;
 use crate::iter::ScfUninitializedIter;
-use crate::property_group::PropertyGroupParent;
 use crate::scf::ScfObject;
 use crate::utf8cstring::PropertyFmri;
 use crate::utf8cstring::Utf8CString;
@@ -64,7 +64,7 @@ impl<'a, St> Property<'a, St> {
             Err(LibscfError::NotFound) => Ok(None),
             Err(err) => Err(LookupError::Get {
                 entity: ScfEntity::Property,
-                parent: property_group.error_path(),
+                parent: property_group.to_entity_description(),
                 name: name.into_string().into_boxed_str(),
                 err,
             }),
@@ -97,7 +97,7 @@ impl<'a, St> Property<'a, St> {
         let iter = unsafe { iter.init_property_values(self.handle.as_ptr()) }
             .map_err(|err| IterError::Iter {
             entity: ScfEntity::Value,
-            parent: self.error_path(),
+            parent: self.to_entity_description(),
             kind: IterErrorKind::Init(err),
         })?;
         Values::new(self, iter)
@@ -110,40 +110,26 @@ impl<'a, St> Property<'a, St> {
     pub fn single_value(&self) -> Result<Value, SingleValueError> {
         let mut iter = self.values()?;
 
-        let first_val = iter.next().ok_or_else(|| {
-            SingleValueError::NoValues { description: self.error_path() }
-        })??;
+        let first_val =
+            iter.next().ok_or_else(|| SingleValueError::NoValues {
+                description: self.to_entity_description(),
+            })??;
 
         match iter.next() {
             None => Ok(first_val),
             Some(Ok(_)) => Err(SingleValueError::MultipleValues {
-                description: self.error_path(),
+                description: self.to_entity_description(),
             }),
             Some(Err(err)) => Err(err.into()),
         }
     }
 }
 
-impl<St> ErrorPath for Property<'_, St> {
-    fn error_path(&self) -> Box<str> {
-        // If our enclosing property group is direct-attached service or
-        // instance, our FMRI is a full description of ourself for errors.
-        //
-        // If we're going through a composed view, that information is not
-        // included in any way in `self.fmri()`; append a note.
-        match self.property_group.parent() {
-            PropertyGroupParent::Service(_)
-            | PropertyGroupParent::Instance(_) => {
-                self.fmri().to_string().into_boxed_str()
-            }
-            PropertyGroupParent::InstanceComposed(_) => {
-                format!("{} (composed)", self.fmri()).into_boxed_str()
-            }
-            PropertyGroupParent::Snapshot(snapshot) => {
-                format!("{} ({} snapshot)", self.fmri(), snapshot.name())
-                    .into_boxed_str()
-            }
-        }
+impl<St> ToEntityDescription for Property<'_, St> {
+    fn to_entity_description(&self) -> ScfEntityDescription {
+        let fmri = self.fmri().to_string().into_boxed_str();
+        let from_pg_kind = self.property_group.to_kind_for_description();
+        ScfEntityDescription::Property { fmri, from_pg_kind }
     }
 }
 

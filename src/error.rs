@@ -17,19 +17,6 @@ use std::str::Utf8Error;
 #[cfg(any(test, feature = "testing"))]
 pub use crate::isolated::IsolatedConfigdRefreshError;
 
-mod sealed {
-    pub trait ErrorPath {
-        /// String describing an entity in the SMF tree for the purposes of error
-        /// reporting.
-        ///
-        /// Most types implement this as something FMRI-like; e.g., a property
-        /// within a property group within a service would return
-        /// `{service_name}/:properties/{property_group_name}/{property_name}`.
-        fn error_path(&self) -> Box<str>;
-    }
-}
-pub(crate) use sealed::ErrorPath;
-
 /// Name of a `libscf` entity.
 ///
 /// `ScfEntity` is used in various error variants that may be emitted for
@@ -72,6 +59,114 @@ impl fmt::Display for ScfEntity {
     }
 }
 
+/// Whether a property group is direct-attached or from a composed view.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PropertyGroupKind {
+    /// The property group is directly attached to a service or instance.
+    DirectAttached,
+
+    /// The property group is from the composed view of an instance.
+    InstanceComposed,
+
+    /// The property group is from the composed view of a snapshot.
+    SnapshotComposed { snapshot_name: Box<str> },
+}
+
+mod sealed {
+    pub trait EntityDescriptionSealed {}
+
+    impl EntityDescriptionSealed for crate::Instance<'_> {}
+    impl<T> EntityDescriptionSealed for crate::Property<'_, T> {}
+    impl<T> EntityDescriptionSealed for crate::PropertyGroup<'_, T> {}
+    impl EntityDescriptionSealed for crate::Scope<'_> {}
+    impl EntityDescriptionSealed for crate::Service<'_> {}
+    impl EntityDescriptionSealed for crate::Snapshot<'_> {}
+
+    impl EntityDescriptionSealed
+        for crate::property_group::PropertyGroupParent<'_>
+    {
+    }
+}
+
+/// Trait for converting an SCF entity into its description.
+///
+/// This is intended for constructing detailed errors.
+pub trait ToEntityDescription: sealed::EntityDescriptionSealed {
+    /// Get the description of this entity.
+    fn to_entity_description(&self) -> ScfEntityDescription;
+}
+
+/// Description of a `libscf` entity.
+///
+/// Each description includes the FMRI of the entity. The variants allow
+/// distinguishing differences that are not part of an FMRI (e.g., whether a
+/// property group is from a direct-attached instance or a composed view of an
+/// instance).
+///
+/// Use [`ScfEntityDescription::error_display()`] to display values of this type
+/// consistently with the way `scuffle` displays them in errors.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ScfEntityDescription {
+    /// The local (only) scope.
+    LocalScope,
+
+    /// A service.
+    Service { fmri: Box<str> },
+
+    /// An instance.
+    Instance { fmri: Box<str> },
+
+    /// A composed view of an instance's property groups.
+    InstanceComposed { fmri: Box<str> },
+
+    /// A snapshot of an instance.
+    Snapshot { instance_fmri: Box<str>, name: Box<str> },
+
+    /// A property group.
+    PropertyGroup { fmri: Box<str>, kind: PropertyGroupKind },
+
+    /// A property obtained from a particular kind of property group.
+    Property { fmri: Box<str>, from_pg_kind: PropertyGroupKind },
+}
+
+impl ScfEntityDescription {
+    /// Display `self` suitable for use in error `Display` impls.
+    pub fn error_display(&self) -> ScfEntityDescriptionErrorDisplay<'_> {
+        ScfEntityDescriptionErrorDisplay(self)
+    }
+}
+
+/// Newtype wrapper for displaying [`ScfEntityDescription`]s.
+pub struct ScfEntityDescriptionErrorDisplay<'a>(&'a ScfEntityDescription);
+
+impl fmt::Display for ScfEntityDescriptionErrorDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            ScfEntityDescription::LocalScope => write!(f, "local scope"),
+            ScfEntityDescription::Service { fmri }
+            | ScfEntityDescription::Instance { fmri } => write!(f, "`{fmri}`"),
+            ScfEntityDescription::InstanceComposed { fmri } => {
+                write!(f, "`{fmri}` (composed view)")
+            }
+            ScfEntityDescription::Snapshot { instance_fmri, name } => {
+                write!(f, "`{instance_fmri}` (`{name}` snapshot)")
+            }
+            ScfEntityDescription::PropertyGroup { fmri, kind }
+            | ScfEntityDescription::Property { fmri, from_pg_kind: kind } => {
+                match kind {
+                    PropertyGroupKind::DirectAttached => write!(f, "`{fmri}`"),
+                    PropertyGroupKind::InstanceComposed => {
+                        write!(f, "`{fmri}` (composed view)")
+                    }
+                    PropertyGroupKind::SnapshotComposed { snapshot_name } => {
+                        write!(f, "`{fmri}` (`{snapshot_name}` snapshot)")
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Error creating a new entity handle.
 #[derive(Debug, thiserror::Error)]
 #[error("failed to create {entity} handle")]
@@ -95,10 +190,13 @@ pub enum LookupError {
         err: NulError,
     },
 
-    #[error("failed to get {entity} `{name}` within `{parent}`")]
+    #[error(
+        "failed to get {entity} `{name}` within {}",
+        .parent.error_display(),
+    )]
     Get {
         entity: ScfEntity,
-        parent: Box<str>,
+        parent: ScfEntityDescription,
         name: Box<str>,
         #[source]
         err: LibscfError,
@@ -173,10 +271,10 @@ pub enum IterError {
     #[error(transparent)]
     HandleCreate(#[from] HandleCreateError),
 
-    #[error("failed to iterate {entity} over `{parent}`")]
+    #[error("failed to iterate {entity} over {}", .parent.error_display())]
     Iter {
         entity: ScfEntity,
-        parent: Box<str>,
+        parent: ScfEntityDescription,
         #[source]
         kind: IterErrorKind,
     },
@@ -476,11 +574,14 @@ pub enum ValueGetError {
 /// Error getting the sole value of a property.
 #[derive(Debug, thiserror::Error)]
 pub enum SingleValueError {
-    #[error("property `{description}` has no values")]
-    NoValues { description: Box<str> },
+    #[error("property {} has no values", .description.error_display())]
+    NoValues { description: ScfEntityDescription },
 
-    #[error("property `{description}` has more than one value")]
-    MultipleValues { description: Box<str> },
+    #[error(
+        "property {} has more than one value",
+        .description.error_display(),
+    )]
+    MultipleValues { description: ScfEntityDescription },
 
     #[error("failed to get single value")]
     IterError(#[from] IterError),
@@ -491,9 +592,9 @@ pub enum SingleValueError {
 /// [`PropertyGroup::update()`]: crate::PropertyGroup::update
 #[derive(Debug, thiserror::Error)]
 pub enum PropertyGroupUpdateError {
-    #[error("failed to update property group `{description}`")]
+    #[error("failed to update property group {}", .description.error_display())]
     Failed {
-        description: Box<str>,
+        description: ScfEntityDescription,
         #[source]
         err: LibscfError,
     },
@@ -502,15 +603,21 @@ pub enum PropertyGroupUpdateError {
 /// Error getting a property group's type from `libscf`.
 #[derive(Debug, thiserror::Error)]
 pub enum PropertyGroupTypeError {
-    #[error("failed to get type of property group `{description}` from libscf")]
+    #[error(
+        "failed to get type of property group {} from libscf",
+        .description.error_display(),
+    )]
     GetType {
-        description: Box<str>,
+        description: ScfEntityDescription,
         #[source]
         err: ScfStringError,
     },
 
-    #[error("unknown type for property group `{description}`: `{type_}`")]
-    UnknownType { description: Box<str>, type_: Box<str> },
+    #[error(
+        "unknown type for property group {}: `{type_}`",
+        .description.error_display(),
+    )]
+    UnknownType { description: ScfEntityDescription, type_: Box<str> },
 }
 
 /// Error adding a property group to a service or instance.
@@ -519,57 +626,64 @@ pub enum PropertyGroupAddError {
     #[error(transparent)]
     HandleCreate(#[from] HandleCreateError),
 
-    #[error("invalid property group name {name:?} in `{parent}`")]
+    #[error(
+        "invalid property group name {name:?} in {}",
+        .parent.error_display(),
+    )]
     InvalidName {
-        parent: Box<str>,
+        parent: ScfEntityDescription,
         name: Box<str>,
         #[source]
         err: NulError,
     },
 
-    #[error("failed to add property group `{name}` to `{parent}`")]
+    #[error(
+        "failed to add property group `{name}` to {}",
+        .parent.error_display(),
+    )]
     Add {
-        parent: Box<str>,
+        parent: ScfEntityDescription,
         name: Box<str>,
         #[source]
         err: LibscfError,
     },
 
     #[error(
-        "failed to look up existence of property group `{name}` on \
-         `{parent}`"
+        "failed to look up existence of property group `{name}` on {}",
+        .parent.error_display(),
     )]
     ExistenceLookup {
-        parent: Box<str>,
+        parent: ScfEntityDescription,
         name: Box<str>,
         #[source]
         err: LookupError,
     },
 
     #[error(
-        "property group `{name}` on `{parent}` was deleted concurrently \
-         with ensure attempt"
+        "property group `{name}` on {} was deleted concurrently \
+         with ensure attempt",
+        .parent.error_display(),
     )]
-    DeletedDuringEnsure { parent: Box<str>, name: Box<str> },
+    DeletedDuringEnsure { parent: ScfEntityDescription, name: Box<str> },
 }
 
 /// Error deleting a property group from a service or instance.
 #[derive(Debug, thiserror::Error)]
 pub enum PropertyGroupDeleteError {
     #[error(
-        "failed to look up property group `{name}` for deletion on \
-         `{parent}`"
+        "failed to look up property group `{name}` for deletion on {}",
+        .parent.error_display(),
     )]
     Lookup {
-        parent: Box<str>,
+        parent: ScfEntityDescription,
         name: Box<str>,
         #[source]
         err: LookupError,
     },
 
-    #[error("failed to delete property group `{description}`")]
+    #[error("failed to delete property group {}", .description.error_display())]
     Delete {
-        description: Box<str>,
+        description: ScfEntityDescription,
         #[source]
         err: LibscfError,
     },
@@ -600,11 +714,12 @@ fn format_transaction_op(op: &TransactionOp) -> &'static str {
 /// transaction.
 #[derive(Debug, thiserror::Error)]
 #[error(
-    "failed to {} property `{name}` in transaction on `{property_group}`",
+    "failed to {} property `{name}` in transaction on {}",
     format_transaction_op(.op),
+    .property_group.error_display(),
 )]
 pub struct TransactionPropertyError {
-    pub property_group: Box<str>,
+    pub property_group: ScfEntityDescription,
     pub name: Box<str>,
     pub op: TransactionOp,
     #[source]
@@ -617,26 +732,32 @@ pub enum TransactionBuildError {
     #[error(transparent)]
     HandleCreate(#[from] HandleCreateError),
 
-    #[error("failed to start transaction on `{property_group}`")]
+    #[error(
+        "failed to start transaction on {}",
+        .property_group.error_display(),
+    )]
     Start {
-        property_group: Box<str>,
+        property_group: ScfEntityDescription,
         #[source]
         err: LibscfError,
     },
 
-    #[error("invalid property name in transaction on `{property_group}`")]
+    #[error(
+        "invalid property name in transaction on {}",
+        .property_group.error_display(),
+    )]
     InvalidName {
-        property_group: Box<str>,
+        property_group: ScfEntityDescription,
         #[source]
         err: NulError,
     },
 
     #[error(
-        "failed to look up existence of property `{name}` in transaction on \
-         `{property_group}`"
+        "failed to look up existence of property `{name}` in transaction on {}",
+         .property_group.error_display(),
     )]
     ExistenceLookup {
-        property_group: Box<str>,
+        property_group: ScfEntityDescription,
         name: Box<str>,
         #[source]
         err: LookupError,
@@ -646,23 +767,23 @@ pub enum TransactionBuildError {
     Property(#[from] TransactionPropertyError),
 
     #[error(
-        "type mismatch on property `{name}` in transaction on \
-         `{property_group}`: property has type {property_type} but value \
-         has type {value_type}"
+        "type mismatch on property `{name}` in transaction on {}: \
+         property has type {property_type} but value has type {value_type}",
+        .property_group.error_display(),
     )]
     TypeMismatch {
-        property_group: Box<str>,
+        property_group: ScfEntityDescription,
         name: Box<str>,
         property_type: ValueKind,
         value_type: ValueKind,
     },
 
     #[error(
-        "failed to set value for property `{name}` in transaction on \
-         `{property_group}`"
+        "failed to set value for property `{name}` in transaction on {}",
+        .property_group.error_display(),
     )]
     SetValue {
-        property_group: Box<str>,
+        property_group: ScfEntityDescription,
         name: Box<str>,
         #[source]
         err: ValueSetError,
@@ -671,9 +792,9 @@ pub enum TransactionBuildError {
 
 /// Error committing a property group transaction.
 #[derive(Debug, thiserror::Error)]
-#[error("failed to commit transaction on `{property_group}`")]
+#[error("failed to commit transaction on {}", .property_group.error_display())]
 pub struct TransactionCommitError {
-    pub property_group: Box<str>,
+    pub property_group: ScfEntityDescription,
     #[source]
     pub err: LibscfError,
 }

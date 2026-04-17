@@ -13,15 +13,17 @@ use crate::Transaction;
 use crate::TransactionReset;
 use crate::buf::scf_get_string;
 use crate::buf::with_scf_pg_type_buf;
-use crate::error::ErrorPath;
 use crate::error::IterError;
 use crate::error::IterErrorKind;
 use crate::error::LibscfError;
 use crate::error::LookupError;
 use crate::error::PropertyGroupDeleteError;
+use crate::error::PropertyGroupKind;
 use crate::error::PropertyGroupTypeError;
 use crate::error::PropertyGroupUpdateError;
 use crate::error::ScfEntity;
+use crate::error::ScfEntityDescription;
+use crate::error::ToEntityDescription;
 use crate::error::TransactionBuildError;
 use crate::iter::ScfIter;
 use crate::iter::ScfUninitializedIter;
@@ -184,7 +186,7 @@ impl<'a, St> PropertyGroup<'a, St> {
             Err(LibscfError::NotFound) => Ok(None),
             Err(err) => Err(LookupError::Get {
                 entity: ScfEntity::PropertyGroup,
-                parent: parent.error_path(),
+                parent: parent.to_entity_description(),
                 name: name.into_string().into_boxed_str(),
                 err,
             }),
@@ -195,8 +197,21 @@ impl<'a, St> PropertyGroup<'a, St> {
         self.handle.scf()
     }
 
-    pub(crate) fn parent(&self) -> PropertyGroupParent<'a> {
-        self.parent
+    pub(crate) fn to_kind_for_description(&self) -> PropertyGroupKind {
+        match &self.parent {
+            PropertyGroupParent::Service(_)
+            | PropertyGroupParent::Instance(_) => {
+                PropertyGroupKind::DirectAttached
+            }
+            PropertyGroupParent::InstanceComposed(_) => {
+                PropertyGroupKind::InstanceComposed
+            }
+            PropertyGroupParent::Snapshot(snapshot) => {
+                PropertyGroupKind::SnapshotComposed {
+                    snapshot_name: snapshot.name().to_string().into_boxed_str(),
+                }
+            }
+        }
     }
 
     pub(crate) unsafe fn scf_get_property(
@@ -242,13 +257,13 @@ impl<'a, St> PropertyGroup<'a, St> {
             )
         })
         .map_err(|err| PropertyGroupTypeError::GetType {
-            description: self.error_path(),
+            description: self.to_entity_description(),
             err,
         })?;
 
         PropertyGroupType::new(type_string.as_str()).ok_or_else(|| {
             PropertyGroupTypeError::UnknownType {
-                description: self.error_path(),
+                description: self.to_entity_description(),
                 type_: type_string.into_string().into_boxed_str(),
             }
         })
@@ -274,7 +289,7 @@ impl<'a, St> PropertyGroup<'a, St> {
         }
         .map_err(|err| IterError::Iter {
             entity: ScfEntity::Property,
-            parent: self.error_path(),
+            parent: self.to_entity_description(),
             kind: IterErrorKind::Init(err),
         })?;
         Ok(Properties::new(self, iter))
@@ -289,33 +304,18 @@ impl<'a, St> PropertyGroup<'a, St> {
             0 => Ok(PropertyGroupUpdateResult::AlreadyUpToDate),
             1 => Ok(PropertyGroupUpdateResult::Updated),
             _ => Err(PropertyGroupUpdateError::Failed {
-                description: self.error_path(),
+                description: self.to_entity_description(),
                 err: LibscfError::last(),
             }),
         }
     }
 }
 
-impl<St> ErrorPath for PropertyGroup<'_, St> {
-    fn error_path(&self) -> Box<str> {
-        match &self.parent {
-            // If we are direct-attached to a service or instance, our FMRI
-            // is a full description of ourself for errors.
-            //
-            // If we're going through a composed view, that information is not
-            // included in any way in `self.fmri()`; append a note.
-            PropertyGroupParent::Service(_)
-            | PropertyGroupParent::Instance(_) => {
-                self.fmri().to_string().into_boxed_str()
-            }
-            PropertyGroupParent::InstanceComposed(_) => {
-                format!("{} (composed)", self.fmri()).into_boxed_str()
-            }
-            PropertyGroupParent::Snapshot(snapshot) => {
-                format!("{} ({} snapshot)", self.fmri(), snapshot.name())
-                    .into_boxed_str()
-            }
-        }
+impl<St> ToEntityDescription for PropertyGroup<'_, St> {
+    fn to_entity_description(&self) -> ScfEntityDescription {
+        let fmri = self.fmri().to_string().into_boxed_str();
+        let kind = self.to_kind_for_description();
+        ScfEntityDescription::PropertyGroup { fmri, kind }
     }
 }
 
@@ -400,7 +400,7 @@ impl<'a> PropertyGroup<'a, PropertyGroupDirect> {
                 Ok(DeletePropertyGroupResult::DoesNotExist)
             }
             Err(err) => Err(PropertyGroupDeleteError::Delete {
-                description: self.error_path(),
+                description: self.to_entity_description(),
                 err,
             }),
         }
@@ -473,15 +473,23 @@ impl<'a> PropertyGroupParent<'a> {
     }
 }
 
-impl ErrorPath for PropertyGroupParent<'_> {
-    fn error_path(&self) -> Box<str> {
+impl ToEntityDescription for PropertyGroupParent<'_> {
+    fn to_entity_description(&self) -> ScfEntityDescription {
         match self {
-            Self::Service(service) => service.error_path(),
-            Self::Instance(instance) => instance.error_path(),
-            Self::InstanceComposed(instance) => {
-                format!("{} (composed)", instance.error_path()).into_boxed_str()
+            PropertyGroupParent::Service(service) => {
+                service.to_entity_description()
             }
-            Self::Snapshot(snapshot) => snapshot.error_path(),
+            PropertyGroupParent::Instance(instance) => {
+                instance.to_entity_description()
+            }
+            PropertyGroupParent::InstanceComposed(instance) => {
+                ScfEntityDescription::InstanceComposed {
+                    fmri: instance.fmri().to_string().into_boxed_str(),
+                }
+            }
+            PropertyGroupParent::Snapshot(snapshot) => {
+                snapshot.to_entity_description()
+            }
         }
     }
 }

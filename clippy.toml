@@ -1,0 +1,4 @@
+# Clippy's default large-error-threshold is 128; we're only slightly over that,
+# so bump up clippy's limit instead of worrying about boxing errors (which makes
+# matching difficult).
+large-error-threshold = 150

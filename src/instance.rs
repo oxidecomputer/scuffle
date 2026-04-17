@@ -17,7 +17,6 @@ use crate::Snapshot;
 use crate::Snapshots;
 use crate::buf::scf_get_name;
 use crate::edit_property_groups::AddPropertyGroupArgs;
-use crate::error::ErrorPath;
 use crate::error::InstanceFromFmriError;
 use crate::error::InstanceRefreshError;
 use crate::error::IterError;
@@ -26,6 +25,8 @@ use crate::error::LibscfError;
 use crate::error::LookupError;
 use crate::error::PropertyGroupAddError;
 use crate::error::ScfEntity;
+use crate::error::ScfEntityDescription;
+use crate::error::ToEntityDescription;
 use crate::iter::ScfIter;
 use crate::iter::ScfUninitializedIter;
 use crate::libscf_sys_priv;
@@ -82,7 +83,7 @@ impl<'a> Instance<'a> {
             Err(LibscfError::NotFound) => Ok(None),
             Err(err) => Err(LookupError::Get {
                 entity: ScfEntity::Instance,
-                parent: service.error_path(),
+                parent: service.to_entity_description(),
                 name: name.into_string().into_boxed_str(),
                 err,
             }),
@@ -187,7 +188,7 @@ impl<'a> Instance<'a> {
         }
         .map_err(|err| IterError::Iter {
             entity: ScfEntity::PropertyGroup,
-            parent: self.error_path(),
+            parent: self.to_entity_description(),
             kind: IterErrorKind::Init(err),
         })
     }
@@ -251,7 +252,7 @@ impl<'a> Instance<'a> {
             unsafe { iter.init_instance_snapshots(self.handle.as_ptr()) }
                 .map_err(|err| IterError::Iter {
                     entity: ScfEntity::Snapshot,
-                    parent: self.error_path(),
+                    parent: self.to_entity_description(),
                     kind: IterErrorKind::Init(err),
                 })?;
         Ok(Snapshots::new(self, iter))
@@ -278,7 +279,7 @@ impl EditPropertyGroups for Instance<'_> {
             )
         })
         .map_err(|err| PropertyGroupAddError::Add {
-            parent: self.error_path(),
+            parent: self.to_entity_description(),
             name: name.to_string().into_boxed_str(),
             err,
         })?;
@@ -304,7 +305,7 @@ impl HasDirectPropertyGroups for Instance<'_> {
             unsafe { iter.init_instance_property_groups(self.handle.as_ptr()) }
                 .map_err(|err| IterError::Iter {
                     entity: ScfEntity::PropertyGroup,
-                    parent: self.error_path(),
+                    parent: self.to_entity_description(),
                     kind: IterErrorKind::Init(err),
                 })?;
         Ok(PropertyGroups::from_instance(self, iter))
@@ -333,9 +334,11 @@ impl HasComposedPropertyGroups for Instance<'_> {
     }
 }
 
-impl ErrorPath for Instance<'_> {
-    fn error_path(&self) -> Box<str> {
-        self.fmri().to_string().into_boxed_str()
+impl ToEntityDescription for Instance<'_> {
+    fn to_entity_description(&self) -> ScfEntityDescription {
+        ScfEntityDescription::Instance {
+            fmri: self.fmri().to_string().into_boxed_str(),
+        }
     }
 }
 

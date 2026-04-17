@@ -4,12 +4,12 @@
 
 use crate::Scf;
 use crate::buf::scf_get_name;
-use crate::error::ErrorPath;
 use crate::error::HandleCreateError;
 use crate::error::IterError;
 use crate::error::IterErrorKind;
 use crate::error::LibscfError;
 use crate::error::ScfEntity;
+use crate::error::ToEntityDescription;
 use crate::scf::ScfObject;
 use crate::utf8cstring::Utf8CString;
 use std::marker::PhantomData;
@@ -237,7 +237,7 @@ impl<'a, T: sealed::ScfIterable> ScfIter<'a, T> {
         handle: &mut ScfObject<'a, T>,
     ) -> Option<Result<(), IterError>>
     where
-        P: ErrorPath,
+        P: ToEntityDescription,
     {
         match unsafe {
             T::try_next(self.handle.as_mut_ptr(), handle.as_mut_ptr())
@@ -246,7 +246,7 @@ impl<'a, T: sealed::ScfIterable> ScfIter<'a, T> {
             1 => Some(Ok(())),
             _ => Some(Err(IterError::Iter {
                 entity: T::ENTITY,
-                parent: parent.error_path(),
+                parent: parent.to_entity_description(),
                 kind: IterErrorKind::GetNext(LibscfError::last()),
             })),
         }
@@ -260,7 +260,7 @@ impl<'a, T: sealed::ScfNamedIterable> ScfIter<'a, T> {
         make_handle: F,
     ) -> Option<Result<(Utf8CString, ScfObject<'a, T>), IterError>>
     where
-        P: ErrorPath,
+        P: ToEntityDescription,
         F: FnOnce() -> Result<ScfObject<'a, T>, HandleCreateError>,
     {
         let mut handle = match make_handle() {
@@ -280,7 +280,7 @@ impl<'a, T: sealed::ScfNamedIterable> ScfIter<'a, T> {
             Err(err) => {
                 return Some(Err(IterError::Iter {
                     entity: T::ENTITY,
-                    parent: parent.error_path(),
+                    parent: parent.to_entity_description(),
                     kind: IterErrorKind::GetName(err),
                 }));
             }

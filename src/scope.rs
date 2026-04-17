@@ -6,7 +6,9 @@ use crate::Scf;
 use crate::Service;
 use crate::error::LibscfError;
 use crate::error::LookupError;
+use crate::error::ScfEntityDescription;
 use crate::error::ScopeError;
+use crate::error::ToEntityDescription;
 use crate::scf::ScfObject;
 
 /// Handle to an SMF scope.
@@ -50,5 +52,11 @@ impl<'a> Scope<'a> {
         name: &str,
     ) -> Result<Option<Service<'_>>, LookupError> {
         Service::new(self, name)
+    }
+}
+
+impl ToEntityDescription for Scope<'_> {
+    fn to_entity_description(&self) -> ScfEntityDescription {
+        ScfEntityDescription::LocalScope
     }
 }

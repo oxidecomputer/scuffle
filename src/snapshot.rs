@@ -8,11 +8,12 @@ use crate::PropertyGroup;
 use crate::PropertyGroupComposed;
 use crate::PropertyGroups;
 use crate::Scf;
-use crate::error::ErrorPath;
 use crate::error::IterError;
 use crate::error::LibscfError;
 use crate::error::LookupError;
 use crate::error::ScfEntity;
+use crate::error::ScfEntityDescription;
+use crate::error::ToEntityDescription;
 use crate::iter::ScfIter;
 use crate::scf::ScfObject;
 use crate::utf8cstring::PropertyGroupFmri;
@@ -57,7 +58,7 @@ impl<'a> Snapshot<'a> {
             Err(LibscfError::NotFound) => Ok(None),
             Err(err) => Err(LookupError::Get {
                 entity: ScfEntity::Snapshot,
-                parent: instance.error_path(),
+                parent: instance.to_entity_description(),
                 name: name.into_string().into_boxed_str(),
                 err,
             }),
@@ -117,19 +118,13 @@ impl HasComposedPropertyGroups for Snapshot<'_> {
     }
 }
 
-impl ErrorPath for Snapshot<'_> {
-    fn error_path(&self) -> Box<str> {
-        snapshot_error_path(self.instance, &self.name)
+impl ToEntityDescription for Snapshot<'_> {
+    fn to_entity_description(&self) -> ScfEntityDescription {
+        ScfEntityDescription::Snapshot {
+            instance_fmri: self.instance_fmri().to_string().into_boxed_str(),
+            name: self.name.to_string().into_boxed_str(),
+        }
     }
-}
-
-fn snapshot_error_path(
-    instance: &Instance<'_>,
-    name: &Utf8CString,
-) -> Box<str> {
-    // There is no syntax for including a snapshot in an FMRI, so we use our
-    // instance's FMRI and note the name of the snapshot.
-    format!("{} ({name} snapshot)", instance.fmri()).into_boxed_str()
 }
 
 /// Iterator over all [`Snapshot`]s in an [`Instance`].

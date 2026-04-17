@@ -9,6 +9,7 @@ use scuffle::HasDirectPropertyGroups;
 use scuffle::Property;
 use scuffle::PropertyGroup;
 use scuffle::Scf;
+use scuffle::error::ToEntityDescription;
 
 #[derive(Parser)]
 #[command(about = "Print the values of an SMF service property")]
@@ -48,15 +49,17 @@ fn print_properties<St>(pg: &PropertyGroup<'_, St>) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn run_direct(
-    target: &impl HasDirectPropertyGroups,
-    name: &str,
+fn run_direct<T: HasDirectPropertyGroups + ToEntityDescription>(
+    target: &T,
     property_group: Option<String>,
     property: Option<String>,
 ) -> anyhow::Result<()> {
     if let Some(property_group) = property_group {
         let Some(pg) = target.property_group_direct(&property_group)? else {
-            bail!("property group `{property_group}` not found in `{name}`");
+            bail!(
+                "property group `{property_group}` not found in {}",
+                target.to_entity_description().error_display()
+            );
         };
 
         if let Some(property) = property {
@@ -77,15 +80,18 @@ fn run_direct(
     Ok(())
 }
 
-fn run_composed(
-    target: &impl HasComposedPropertyGroups,
-    name: &str,
+fn run_composed<T: HasComposedPropertyGroups + ToEntityDescription>(
+    target: &T,
     property_group: Option<String>,
     property: Option<String>,
 ) -> anyhow::Result<()> {
     if let Some(property_group) = property_group {
         let Some(pg) = target.property_group_composed(&property_group)? else {
-            bail!("property group `{property_group}` not found in `{name}`");
+            bail!(
+                "property group `{property_group}` not found in composed \
+                 properties within {}",
+                target.to_entity_description().error_display()
+            );
         };
 
         if let Some(property) = property {
@@ -138,16 +144,14 @@ fn main() -> anyhow::Result<()> {
                     inst.fmri(),
                 );
             };
-            let name = format!("{} ({} snapshot)", inst.fmri(), snap.name());
-            run_composed(&snap, &name, property_group, property)?;
+            run_composed(&snap, property_group, property)?;
         } else if composed {
-            let name = format!("{} (composed)", inst.fmri());
-            run_composed(&inst, &name, property_group, property)?;
+            run_composed(&inst, property_group, property)?;
         } else {
-            run_direct(&inst, inst.fmri(), property_group, property)?;
+            run_direct(&inst, property_group, property)?;
         }
     } else {
-        run_direct(&service, service.fmri(), property_group, property)?;
+        run_direct(&service, property_group, property)?;
     }
 
     Ok(())

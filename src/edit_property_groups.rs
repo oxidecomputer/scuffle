@@ -7,10 +7,10 @@ use crate::PropertyGroup;
 use crate::PropertyGroupDirect;
 use crate::PropertyGroupType;
 use crate::Scf;
-use crate::error::ErrorPath;
 use crate::error::LibscfError;
 use crate::error::PropertyGroupAddError;
 use crate::error::PropertyGroupDeleteError;
+use crate::error::ToEntityDescription;
 use crate::scf::ScfObject;
 use crate::utf8cstring::Utf8CString;
 
@@ -47,7 +47,9 @@ pub enum DeletePropertyGroupResult {
 ///
 /// [`Instance`]: crate::Instance
 /// [`Service`]: crate::Service
-pub trait EditPropertyGroups: HasDirectPropertyGroups + ErrorPath {
+pub trait EditPropertyGroups:
+    HasDirectPropertyGroups + ToEntityDescription
+{
     /// Add a new property group.
     fn add_property_group(
         &mut self,
@@ -88,16 +90,18 @@ pub trait EditPropertyGroups: HasDirectPropertyGroups + ErrorPath {
             Err(err) => return Err(err),
         }
 
-        self.property_group_direct(name)
-            .map_err(|err| PropertyGroupAddError::ExistenceLookup {
-                parent: self.error_path(),
+        match self.property_group_direct(name) {
+            Ok(Some(property_group)) => Ok(property_group),
+            Ok(None) => Err(PropertyGroupAddError::DeletedDuringEnsure {
+                parent: self.to_entity_description(),
+                name: Box::from(name),
+            }),
+            Err(err) => Err(PropertyGroupAddError::ExistenceLookup {
+                parent: self.to_entity_description(),
                 name: Box::from(name),
                 err,
-            })?
-            .ok_or_else(|| PropertyGroupAddError::DeletedDuringEnsure {
-                parent: self.error_path(),
-                name: Box::from(name),
-            })
+            }),
+        }
     }
 
     /// Delete a property group by name.
@@ -110,7 +114,7 @@ pub trait EditPropertyGroups: HasDirectPropertyGroups + ErrorPath {
             Ok(None) => return Ok(DeletePropertyGroupResult::DoesNotExist),
             Err(err) => {
                 return Err(PropertyGroupDeleteError::Lookup {
-                    parent: self.error_path(),
+                    parent: self.to_entity_description(),
                     name: name.to_string().into_boxed_str(),
                     err,
                 });
@@ -127,7 +131,7 @@ pub(crate) struct AddPropertyGroupArgs<'a> {
 }
 
 impl<'a> AddPropertyGroupArgs<'a> {
-    pub(crate) fn validate<P: ErrorPath>(
+    pub(crate) fn validate<P: ToEntityDescription>(
         scf: &'a Scf<'_>,
         parent: &P,
         name: &str,
@@ -135,7 +139,7 @@ impl<'a> AddPropertyGroupArgs<'a> {
     ) -> Result<Self, PropertyGroupAddError> {
         let name = Utf8CString::from_str(name).map_err(|err| {
             PropertyGroupAddError::InvalidName {
-                parent: parent.error_path(),
+                parent: parent.to_entity_description(),
                 name: Box::from(name),
                 err,
             }

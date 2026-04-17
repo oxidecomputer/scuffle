@@ -14,13 +14,14 @@ use crate::PropertyGroups;
 use crate::Scf;
 use crate::Scope;
 use crate::edit_property_groups::AddPropertyGroupArgs;
-use crate::error::ErrorPath;
 use crate::error::IterError;
 use crate::error::IterErrorKind;
 use crate::error::LibscfError;
 use crate::error::LookupError;
 use crate::error::PropertyGroupAddError;
 use crate::error::ScfEntity;
+use crate::error::ScfEntityDescription;
+use crate::error::ToEntityDescription;
 use crate::iter::ScfUninitializedIter;
 use crate::libscf_sys_supplemental;
 use crate::scf::ScfObject;
@@ -68,7 +69,7 @@ impl<'a> Service<'a> {
             Err(LibscfError::NotFound) => Ok(None),
             Err(err) => Err(LookupError::Get {
                 entity: ScfEntity::Service,
-                parent: "scope".into(),
+                parent: scope.to_entity_description(),
                 name: name.into_string().into_boxed_str(),
                 err,
             }),
@@ -142,7 +143,7 @@ impl<'a> Service<'a> {
         let iter = unsafe { iter.init_service_instances(self.handle.as_ptr()) }
             .map_err(|err| IterError::Iter {
                 entity: ScfEntity::Instance,
-                parent: self.error_path(),
+                parent: self.to_entity_description(),
                 kind: IterErrorKind::Init(err),
             })?;
         Ok(Instances::new(self, iter))
@@ -169,7 +170,7 @@ impl EditPropertyGroups for Service<'_> {
             )
         })
         .map_err(|err| PropertyGroupAddError::Add {
-            parent: self.error_path(),
+            parent: self.to_entity_description(),
             name: name.to_string().into_boxed_str(),
             err,
         })?;
@@ -195,15 +196,17 @@ impl HasDirectPropertyGroups for Service<'_> {
             unsafe { iter.init_service_property_groups(self.handle.as_ptr()) }
                 .map_err(|err| IterError::Iter {
                     entity: ScfEntity::PropertyGroup,
-                    parent: self.error_path(),
+                    parent: self.to_entity_description(),
                     kind: IterErrorKind::Init(err),
                 })?;
         Ok(PropertyGroups::from_service(self, iter))
     }
 }
 
-impl ErrorPath for Service<'_> {
-    fn error_path(&self) -> Box<str> {
-        self.fmri().to_string().into_boxed_str()
+impl ToEntityDescription for Service<'_> {
+    fn to_entity_description(&self) -> ScfEntityDescription {
+        ScfEntityDescription::Service {
+            fmri: self.fmri().to_string().into_boxed_str(),
+        }
     }
 }

@@ -9,6 +9,14 @@ use crate::PropertyGroups;
 use crate::error::IterError;
 use crate::error::LookupError;
 
+mod sealed {
+    pub trait PropertyGroupsSealed {}
+
+    impl PropertyGroupsSealed for crate::Instance<'_> {}
+    impl PropertyGroupsSealed for crate::Service<'_> {}
+    impl PropertyGroupsSealed for crate::Snapshot<'_> {}
+}
+
 /// Trait to look up direct-attached property groups from a [`Service`] or
 /// [`Instance`].
 ///
@@ -17,7 +25,7 @@ use crate::error::LookupError;
 ///
 /// [`Instance`]: crate::Instance
 /// [`Service`]: crate::Service
-pub trait HasDirectPropertyGroups {
+pub trait HasDirectPropertyGroups: sealed::PropertyGroupsSealed {
     /// Look up a direct-attached property group by name.
     fn property_group_direct(
         &self,
@@ -37,7 +45,7 @@ pub trait HasDirectPropertyGroups {
 ///
 /// [`Instance`]: crate::Instance
 /// [`Snapshot`]: crate::Snapshot
-pub trait HasComposedPropertyGroups {
+pub trait HasComposedPropertyGroups: sealed::PropertyGroupsSealed {
     /// Look up a composed property group by name.
     fn property_group_composed(
         &self,
