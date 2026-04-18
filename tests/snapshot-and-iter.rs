@@ -85,7 +85,7 @@ fn iterators() {
     }
 
     // Refresh the instance so snapshots pick up the new PGs.
-    instance.refresh().expect("refresh");
+    instance.smf_refresh().expect("refresh");
 
     // Instance::snapshots() should contain "running" after refresh.
     {

@@ -18,7 +18,8 @@ use crate::Snapshots;
 use crate::buf::scf_get_name;
 use crate::edit_property_groups::AddPropertyGroupArgs;
 use crate::error::InstanceFromFmriError;
-use crate::error::InstanceRefreshError;
+use crate::error::InstanceOp;
+use crate::error::InstanceOpError;
 use crate::error::IterError;
 use crate::error::IterErrorKind;
 use crate::error::LibscfError;
@@ -29,11 +30,13 @@ use crate::error::ScfEntityDescription;
 use crate::error::ToEntityDescription;
 use crate::iter::ScfIter;
 use crate::iter::ScfUninitializedIter;
-use crate::libscf_sys_priv;
 use crate::scf::ScfObject;
 use crate::utf8cstring::InstanceFmri;
 use crate::utf8cstring::PropertyGroupFmri;
 use crate::utf8cstring::Utf8CString;
+
+#[cfg(not(feature = "smf-by-instance"))]
+use crate::libscf_sys_priv;
 
 /// Handle to an SMF instance.
 ///
@@ -214,17 +217,19 @@ impl<'a> Instance<'a> {
     /// it will both update the `"running"` snapshot to match any property
     /// changes made since the last time the instance was refreshed and will
     /// invoke the instance's SMF `refresh` method.
-    pub fn refresh(&mut self) -> Result<(), InstanceRefreshError> {
+    pub fn smf_refresh(&mut self) -> Result<(), InstanceOpError> {
         self.scf().refresh_instance(self)
     }
 
-    pub(crate) fn scf_refresh_via_private_api(
-        &mut self,
-    ) -> Result<(), InstanceRefreshError> {
+    // Without the new functions gated by `smf-by-instance`, we refresh via a
+    // private API that is also used by `svccfg`.
+    #[cfg(not(feature = "smf-by-instance"))]
+    pub(crate) fn scf_refresh(&mut self) -> Result<(), InstanceOpError> {
         LibscfError::from_ret(unsafe {
             libscf_sys_priv::_smf_refresh_instance_i(self.handle.as_mut_ptr())
         })
-        .map_err(|err| InstanceRefreshError::Failed {
+        .map_err(|err| InstanceOpError::Failed {
+            op: InstanceOp::Refresh,
             fmri: self.fmri().to_string().into_boxed_str(),
             err,
         })
@@ -374,5 +379,283 @@ impl<'a> Iterator for Instances<'a> {
                     handle,
                 })
             })
+    }
+}
+
+#[cfg(feature = "smf-by-instance")]
+pub use smf_by_instance::*;
+
+#[cfg(feature = "smf-by-instance")]
+mod smf_by_instance {
+    use super::*;
+    use crate::error::InstanceSmfStateError;
+    use crate::libscf_sys_supplemental;
+    use bitflags::bitflags;
+    use std::ffi::CStr;
+    use std::ptr::NonNull;
+
+    bitflags! {
+        /// Optional flags for putting an SMF instance into maintenance.
+        ///
+        /// These flags can be combined via bitwise-or (`|`).
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+        pub struct SmfMaintainFlags: libc::c_int {
+            const Immediate = libscf_sys::SMF_IMMEDIATE;
+            const Temporary = libscf_sys::SMF_TEMPORARY;
+        }
+    }
+
+    /// Optional flags for enabling or disabling SMF instances.
+    ///
+    /// These flags are mutually exclusive.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+    #[non_exhaustive] // leave the door open for libscf to add more flags
+    pub enum SmfEnableDisableFlags {
+        Temporary,
+        AtNextBoot,
+    }
+
+    impl SmfEnableDisableFlags {
+        // These aren't bits in the `bitflags`-sense, because they're mutually
+        // exclusive, but we reuse that name so we can pass any of these flag
+        // types into the `smf_operation!` macro below.
+        fn bits(self) -> libc::c_int {
+            match self {
+                Self::Temporary => libscf_sys::SMF_TEMPORARY,
+                Self::AtNextBoot => libscf_sys::SMF_AT_NEXT_BOOT,
+            }
+        }
+    }
+
+    /// Optional flags for putting an SMF instance into the degraded state.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+    #[non_exhaustive] // leave the door open for libscf to add more flags
+    pub enum SmfDegradeFlags {
+        Immediate,
+    }
+
+    impl SmfDegradeFlags {
+        // These aren't bits in the `bitflags`-sense, because there's only one
+        // option here, but we reuse that name so we can pass any of these flag
+        // types into the `smf_operation!` macro below.
+        fn bits(self) -> libc::c_int {
+            match self {
+                Self::Immediate => libscf_sys::SMF_IMMEDIATE,
+            }
+        }
+    }
+
+    macro_rules! smf_operation {
+        ($comment:literal, $op:ident, $our_name:ident, $scf_name:ident) => {
+            #[doc = $comment]
+            #[doc = "\n\n"]
+            #[doc = "# Errors\n\n"]
+            #[doc = "Fails if called under an `IsolatedConfigd` testing setup."]
+            pub fn $our_name(&mut self) -> Result<(), InstanceOpError> {
+                self.scf().fail_instance_op_if_isolated_configd()?;
+                LibscfError::from_ret(unsafe {
+                    libscf_sys_supplemental::$scf_name(self.handle.as_mut_ptr())
+                })
+                .map_err(|err| InstanceOpError::Failed {
+                    op: InstanceOp::$op,
+                    fmri: self.fmri().to_string().into_boxed_str(),
+                    err,
+                })
+            }
+        };
+
+        (
+            $comment:literal,
+            $op:ident,
+            $our_name:ident,
+            $scf_name:ident,
+            $flags:ty,
+        ) => {
+            #[doc = $comment]
+            #[doc = "\n\n"]
+            #[doc = "# Errors\n\n"]
+            #[doc = "Fails if called under an `IsolatedConfigd` testing setup."]
+            pub fn $our_name(
+                &mut self,
+                flags: Option<$flags>,
+            ) -> Result<(), InstanceOpError> {
+                self.scf().fail_instance_op_if_isolated_configd()?;
+                let flags = flags.map_or(0, |f| f.bits());
+                LibscfError::from_ret(unsafe {
+                    libscf_sys_supplemental::$scf_name(
+                        self.handle.as_mut_ptr(),
+                        flags,
+                    )
+                })
+                .map_err(|err| InstanceOpError::Failed {
+                    op: InstanceOp::$op,
+                    fmri: self.fmri().to_string().into_boxed_str(),
+                    err,
+                })
+            }
+        };
+
+        (
+            $comment:literal,
+            $op:ident,
+            $our_name:ident,
+            $scf_name:ident,
+            $flags:ty,
+            TAKES_COMMENT
+        ) => {
+            #[doc = $comment]
+            #[doc = "\n\n"]
+            #[doc = "# Errors\n\n"]
+            #[doc = "Fails if called under an `IsolatedConfigd` testing setup."]
+            pub fn $our_name(
+                &mut self,
+                flags: Option<$flags>,
+                comment: Option<&str>,
+            ) -> Result<(), InstanceOpError> {
+                self.scf().fail_instance_op_if_isolated_configd()?;
+                let comment = match comment {
+                    Some(s) => {
+                        let s = Utf8CString::from_str(s).map_err(|err| {
+                            InstanceOpError::InvalidComment {
+                                comment: s.to_string().into_boxed_str(),
+                                err,
+                            }
+                        })?;
+                        let c_str_len = s.as_c_str().to_bytes_with_nul().len();
+                        if c_str_len
+                            > libscf_sys_supplemental::SCF_COMMENT_MAX_LENGTH
+                        {
+                            return Err(InstanceOpError::CommentTooLong {
+                                c_str_len,
+                                max_len: libscf_sys_supplemental::SCF_COMMENT_MAX_LENGTH,
+                                comment: s.into_string().into_boxed_str(),
+                            });
+                        }
+                        Some(s)
+                    }
+                    None => None,
+                };
+
+                let flags = flags.map_or(0, |f| f.bits());
+                let result = LibscfError::from_ret(unsafe {
+                    libscf_sys_supplemental::$scf_name(
+                        self.handle.as_mut_ptr(),
+                        flags,
+                        comment.as_ref().map_or(
+                            std::ptr::null(),
+                            |s| s.as_c_str().as_ptr(),
+                        ),
+                    )
+                })
+                .map_err(|err| InstanceOpError::Failed {
+                    op: InstanceOp::$op,
+                    fmri: self.fmri().to_string().into_boxed_str(),
+                    err,
+                });
+
+                // Keep `comment` alive across the FFI call above.
+                std::mem::drop(comment);
+
+                result
+            }
+        };
+    }
+
+    impl Instance<'_> {
+        pub(crate) fn scf_refresh(&mut self) -> Result<(), InstanceOpError> {
+            LibscfError::from_ret(unsafe {
+                libscf_sys_supplemental::smf_refresh_instance_by_instance(
+                    self.handle.as_mut_ptr(),
+                )
+            })
+            .map_err(|err| InstanceOpError::Failed {
+                op: InstanceOp::Refresh,
+                fmri: self.fmri().to_string().into_boxed_str(),
+                err,
+            })
+        }
+
+        /// Get the current SMF state of this instance.
+        pub fn smf_state(&mut self) -> Result<String, InstanceSmfStateError> {
+            // `smf_get_state_by_instance()` returns a malloc'd string we're
+            // responsible for freeing; immediately wrap the pointer in a type
+            // that will free on drop.
+            struct FreeOnDrop(NonNull<libc::c_char>);
+            impl Drop for FreeOnDrop {
+                fn drop(&mut self) {
+                    unsafe {
+                        libc::free(self.0.as_ptr().cast::<libc::c_void>())
+                    };
+                }
+            }
+
+            let state = match NonNull::new(unsafe {
+                libscf_sys_supplemental::smf_get_state_by_instance(
+                    self.handle.as_mut_ptr(),
+                )
+            }) {
+                Some(state) => FreeOnDrop(state),
+                None => {
+                    return Err(InstanceSmfStateError::GetState {
+                        fmri: self.fmri().to_string().into_boxed_str(),
+                        err: LibscfError::last(),
+                    });
+                }
+            };
+
+            let state_c_str = unsafe { CStr::from_ptr(state.0.as_ptr()) };
+            let state_str = state_c_str.to_str().map_err(|err| {
+                InstanceSmfStateError::NonUtf8State {
+                    fmri: self.fmri().to_string().into_boxed_str(),
+                    state: Box::from(state_c_str),
+                    err,
+                }
+            })?;
+
+            Ok(state_str.to_owned())
+        }
+
+        smf_operation!(
+            "Put this instance into the degraded state.",
+            Degrade,
+            smf_degrade,
+            smf_degrade_instance_by_instance,
+            SmfDegradeFlags,
+        );
+        smf_operation!(
+            "Put this instance into the disabled state.",
+            Disable,
+            smf_disable,
+            smf_disable_instance_by_instance,
+            SmfEnableDisableFlags,
+            TAKES_COMMENT
+        );
+        smf_operation!(
+            "Put this instance into the enabled state.",
+            Enable,
+            smf_enable,
+            smf_enable_instance_by_instance,
+            SmfEnableDisableFlags,
+            TAKES_COMMENT
+        );
+        smf_operation!(
+            "Put this instance into the maintenance state.",
+            Maintain,
+            smf_maintain,
+            smf_maintain_instance_by_instance,
+            SmfMaintainFlags,
+        );
+        smf_operation!(
+            "Restart this instance.",
+            Restart,
+            smf_restart,
+            smf_restart_instance_by_instance
+        );
+        smf_operation!(
+            "Restore this instance.",
+            Restore,
+            smf_restore,
+            smf_restore_instance_by_instance
+        );
     }
 }

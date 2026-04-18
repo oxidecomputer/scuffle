@@ -144,11 +144,15 @@
 //!
 //! # Features
 //!
-//! `scuffle` has two optional Cargo features:
+//! `scuffle` has three optional Cargo features:
 //!
 //! * Enabling the `daft` feature adds implementations of
 //!   [`daft::Diffable`][diffable] to [`Value`], [`ValueRef`], and
 //!   [`ValueKind`].
+//! * Enabling the `smf-by-instance` feature adds several `Instance::smf_*`
+//!   methods for controlling the SMF state of an instance, but requires a
+//!   `libscf` that includes [recently-stabilized
+//!   APIs](https://www.illumos.org/issues/18043).
 //! * Enabling the `testing` feature adds types to support writing tests that
 //!   interact with SMF without needing to modify system-level SMF services /
 //!   instances / properties; see "Testing Support" below.
@@ -160,12 +164,9 @@
 //! * [`Scf::connect_zone()`] uses an undocumented SCF handle decoration to
 //!   connect to `svc.configd` inside the specified zone. This matches how
 //!   `svcadm` and `svcprop` implement their `-z zone` flags.
-//! * [`Instance::refresh()`] uses a non-public function defined by
-//!   `libscf_priv.h` (`_smf_refresh_instance_i()`). There is currently no
-//!   public interface for refreshing an instance by handle; the only public
-//!   interface for instance refreshing is
-//!   [`libscf_sys::smf_refresh_instance()`], which can only refresh instances
-//!   in the global zone identified by FMRI.
+//! * If the `smf-by-instance` Cargo feature is not enabled,
+//!   [`Instance::smf_refresh()`] uses a non-public function defined by
+//!   `libscf_priv.h` (`_smf_refresh_instance_i()`).
 //! * If the `testing` feature is enabled, it uses several other non-public
 //!   interfaces; see "Testing Support" below.
 //!
@@ -217,6 +218,7 @@ mod value;
 mod libscf_sys_supplemental;
 
 // TODO-cleanup Remove once there are equivalent committed interfaces.
+#[cfg(not(feature = "smf-by-instance"))]
 mod libscf_sys_priv;
 
 pub mod error;
@@ -254,3 +256,12 @@ pub use value::ValueDisplaySmf;
 pub use value::ValueKind;
 pub use value::ValueRef;
 pub use value::Values;
+
+#[cfg(feature = "smf-by-instance")]
+mod smf_by_instance_exports {
+    pub use super::instance::SmfDegradeFlags;
+    pub use super::instance::SmfEnableDisableFlags;
+    pub use super::instance::SmfMaintainFlags;
+}
+#[cfg(feature = "smf-by-instance")]
+pub use smf_by_instance_exports::*;

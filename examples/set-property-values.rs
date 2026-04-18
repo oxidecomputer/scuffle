@@ -132,7 +132,7 @@ fn main() -> anyhow::Result<()> {
         )?;
 
         if args.refresh {
-            inst.refresh()?;
+            inst.smf_refresh()?;
         }
     } else {
         let name = service.fmri().to_string();

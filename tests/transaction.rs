@@ -348,7 +348,7 @@ fn transaction_property_change_overwrites() {
 }
 
 /// Write a property via a transaction, then verify it is NOT visible
-/// through the "running" snapshot until after `instance.refresh()`.
+/// through the "running" snapshot until after `instance.smf_refresh()`.
 #[test]
 fn transaction_snapshot_visibility_after_refresh() {
     let isolated =
@@ -407,7 +407,7 @@ fn transaction_snapshot_visibility_after_refresh() {
         // Refresh the instance so its "running" snapshot is updated.
         {
             let mut inst = instance.borrow_mut();
-            inst.refresh().expect("refresh");
+            inst.smf_refresh().expect("refresh");
         }
 
         // After refresh, the property group and its value SHOULD be
@@ -559,7 +559,7 @@ fn service_property_composed_visibility() {
                 .instance("default")
                 .expect("lookup instance")
                 .expect("instance should exist");
-            inst.refresh().expect("refresh");
+            inst.smf_refresh().expect("refresh");
         }
 
         // After refresh, visible via the "running" snapshot.

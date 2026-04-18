@@ -8,6 +8,7 @@ use crate::ValueKind;
 use chrono::DateTime;
 use chrono::Utc;
 use num_traits::FromPrimitive;
+use std::ffi::CStr;
 use std::ffi::FromBytesWithNulError;
 use std::ffi::NulError;
 use std::fmt;
@@ -480,9 +481,34 @@ pub enum ScfError {
     },
 }
 
-/// Error refreshing an instance.
+/// Kind of instance operation performed via SMF.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstanceOp {
+    Enable,
+    Degrade,
+    Disable,
+    Maintain,
+    Refresh,
+    Restart,
+    Restore,
+}
+
+// Helper method for use in the error string of `InstanceOpError`
+fn format_instance_op(op: &InstanceOp) -> &'static str {
+    match op {
+        InstanceOp::Enable => "enable",
+        InstanceOp::Degrade => "degrade",
+        InstanceOp::Disable => "disable",
+        InstanceOp::Maintain => "maintain",
+        InstanceOp::Refresh => "refresh",
+        InstanceOp::Restart => "restart",
+        InstanceOp::Restore => "restore",
+    }
+}
+
+/// Error performing an SMF operation on an instance.
 #[derive(Debug, thiserror::Error)]
-pub enum InstanceRefreshError {
+pub enum InstanceOpError {
     #[error("invalid instance FMRI {fmri:?}")]
     InvalidFmri {
         fmri: Box<str>,
@@ -490,7 +516,59 @@ pub enum InstanceRefreshError {
         err: NulError,
     },
 
-    #[error("failed to refresh instance `{fmri}`")]
+    #[error("invalid operation comment {comment:?}")]
+    InvalidComment {
+        comment: Box<str>,
+        #[source]
+        err: NulError,
+    },
+
+    #[error("comment too long (length {c_str_len} > max {max_len}): {comment}")]
+    CommentTooLong { c_str_len: usize, max_len: usize, comment: Box<str> },
+
+    #[error("failed to {} instance `{fmri}`", format_instance_op(.op))]
+    Failed {
+        op: InstanceOp,
+        fmri: Box<str>,
+        #[source]
+        err: LibscfError,
+    },
+
+    #[cfg(any(test, feature = "testing"))]
+    #[error(
+        "`refresh` is the only supported instance operation while \
+         connected to an isolated svc.configd"
+    )]
+    UnsupportedIsolated,
+
+    #[cfg(any(test, feature = "testing"))]
+    #[error("failed to refresh via isolated svc.configd")]
+    Isolated(#[from] IsolatedConfigdRefreshError),
+}
+
+/// Error getting the SMF state of an instance.
+#[derive(Debug, thiserror::Error)]
+pub enum InstanceSmfStateError {
+    #[error("failed to get state of `{fmri}`")]
+    GetState {
+        fmri: Box<str>,
+        #[source]
+        err: LibscfError,
+    },
+
+    #[error("libscf returned non-UTF8 state for `{fmri}` {state:?}")]
+    NonUtf8State {
+        fmri: Box<str>,
+        state: Box<CStr>,
+        #[source]
+        err: Utf8Error,
+    },
+}
+
+/// Error refreshing all instances of a service.
+#[derive(Debug, thiserror::Error)]
+pub enum ServiceRefreshAllError {
+    #[error("failed to refresh all instances of `{fmri}`")]
     Failed {
         fmri: Box<str>,
         #[source]

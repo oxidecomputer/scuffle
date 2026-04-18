@@ -8,7 +8,7 @@ use crate::ValueRef;
 use crate::error::HandleCreateError;
 use crate::error::InstanceFromEnvError;
 use crate::error::InstanceFromFmriError;
-use crate::error::InstanceRefreshError;
+use crate::error::InstanceOpError;
 use crate::error::LibscfError;
 use crate::error::ScfEntity;
 use crate::error::ScfError;
@@ -16,6 +16,11 @@ use crate::error::ScopeError;
 use crate::value::ScfValue;
 use std::marker::PhantomData;
 use std::ptr::NonNull;
+
+#[cfg(feature = "smf-by-instance")]
+use crate::error::ServiceRefreshAllError;
+#[cfg(feature = "smf-by-instance")]
+use crate::Service;
 
 mod object;
 
@@ -170,19 +175,6 @@ impl<'a> Scf<'a> {
         Scope::new_local(self)
     }
 
-    /*
-    /// Refresh an SMF instance identified by its FMRI.
-    pub fn refresh_instance(
-        &self,
-        fmri: &str,
-    ) -> Result<(), InstanceRefreshError> {
-        let fmri = CString::new(fmri).map_err(|err| {
-            InstanceRefreshError::InvalidFmri { fmri: Box::from(fmri), err }
-        })?;
-        self.refresh_instance_cstr(&fmri)
-    }
-    */
-
     /// Obtain an [`Instance`] handle identified by its FMRI.
     pub fn instance_from_fmri(
         &self,
@@ -229,8 +221,23 @@ impl<'a> Scf<'a> {
     pub(crate) fn refresh_instance(
         &self,
         instance: &mut Instance<'_>,
-    ) -> Result<(), InstanceRefreshError> {
+    ) -> Result<(), InstanceOpError> {
         self.refresher.refresh_instance(instance)
+    }
+
+    #[cfg(feature = "smf-by-instance")]
+    pub(crate) fn refresh_all_instances(
+        &self,
+        service: &mut Service<'_>,
+    ) -> Result<(), ServiceRefreshAllError> {
+        self.refresher.refresh_all_instances(service)
+    }
+
+    #[cfg(feature = "smf-by-instance")]
+    pub(crate) fn fail_instance_op_if_isolated_configd(
+        &self,
+    ) -> Result<(), InstanceOpError> {
+        self.refresher.fail_instance_op_if_isolated_configd()
     }
 
     pub(crate) unsafe fn scf_get_scope_local(
@@ -298,7 +305,7 @@ impl RefreshMechanism<'_> {
     fn refresh_instance(
         &self,
         instance: &mut Instance<'_>,
-    ) -> Result<(), InstanceRefreshError> {
+    ) -> Result<(), InstanceOpError> {
         match self {
             RefreshMechanism::Libscf(_) => {
                 // The only public / committed interface for refreshing
@@ -313,7 +320,7 @@ impl RefreshMechanism<'_> {
                 // refreshing directly via the instance handle. This is
                 // consistent with `svcadm -z zone refresh ...`, but is
                 // obviously not ideal since it could break in the future!
-                instance.scf_refresh_via_private_api()
+                instance.scf_refresh()
             }
 
             #[cfg(any(test, feature = "testing"))]
@@ -323,6 +330,41 @@ impl RefreshMechanism<'_> {
 
                 let fmri = OsStr::from_bytes(instance.fmri_c_str().to_bytes());
                 configd.refresh(fmri).map_err(From::from)
+            }
+        }
+    }
+
+    #[cfg(feature = "smf-by-instance")]
+    pub(crate) fn refresh_all_instances(
+        &self,
+        service: &mut Service<'_>,
+    ) -> Result<(), ServiceRefreshAllError> {
+        match self {
+            RefreshMechanism::Libscf(_) => {
+                service.smf_refresh_all_instances_impl()
+            }
+
+            #[cfg(any(test, feature = "testing"))]
+            RefreshMechanism::Isolated(configd) => {
+                use std::ffi::OsStr;
+                use std::os::unix::ffi::OsStrExt;
+
+                let fmri = OsStr::from_bytes(service.fmri_c_str().to_bytes());
+                configd.refresh(fmri).map_err(From::from)
+            }
+        }
+    }
+
+    #[cfg(feature = "smf-by-instance")]
+    pub(crate) fn fail_instance_op_if_isolated_configd(
+        &self,
+    ) -> Result<(), InstanceOpError> {
+        match self {
+            RefreshMechanism::Libscf(_) => Ok(()),
+
+            #[cfg(any(test, feature = "testing"))]
+            RefreshMechanism::Isolated(_) => {
+                Err(InstanceOpError::UnsupportedIsolated)
             }
         }
     }

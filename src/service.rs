@@ -31,6 +31,9 @@ use crate::utf8cstring::ServiceFmri;
 use crate::utf8cstring::Utf8CString;
 use std::marker::PhantomData;
 
+#[cfg(feature = "smf-by-instance")]
+use crate::error::ServiceRefreshAllError;
+
 /// Handle to an SMF service.
 #[derive(Debug)]
 pub struct Service<'a> {
@@ -118,6 +121,11 @@ impl<'a> Service<'a> {
         self.fmri.as_str()
     }
 
+    #[cfg(all(feature = "smf-by-instance", any(test, feature = "testing")))]
+    pub(crate) fn fmri_c_str(&self) -> &std::ffi::CStr {
+        self.fmri.as_c_str()
+    }
+
     /// Look up an instance of this service by name.
     pub fn instance(
         &self,
@@ -147,6 +155,33 @@ impl<'a> Service<'a> {
                 kind: IterErrorKind::Init(err),
             })?;
         Ok(Instances::new(self, iter))
+    }
+
+    /// Refresh all instances in this service.
+    #[cfg(feature = "smf-by-instance")]
+    pub fn smf_refresh_all_instances(
+        &mut self,
+    ) -> Result<(), ServiceRefreshAllError> {
+        // This goes through `self.scf()` instead of calling
+        // `self.smf_refresh_all_instances_impl()` directly so we can intercept
+        // the call and go through the isolated configd instance refresh
+        // mechanism, if we're running under test.
+        self.scf().refresh_all_instances(self)
+    }
+
+    #[cfg(feature = "smf-by-instance")]
+    pub(crate) fn smf_refresh_all_instances_impl(
+        &mut self,
+    ) -> Result<(), ServiceRefreshAllError> {
+        LibscfError::from_ret(unsafe {
+            libscf_sys_supplemental::smf_refresh_all_instances(
+                self.handle.as_mut_ptr(),
+            )
+        })
+        .map_err(|err| ServiceRefreshAllError::Failed {
+            fmri: self.fmri().to_string().into_boxed_str(),
+            err,
+        })
     }
 }
 

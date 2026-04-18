@@ -25,7 +25,7 @@ use crate::utf8cstring::Utf8CString;
 /// snapshot is the `"running"` snapshot, which provides a composed view of the
 /// current effective configuration of an instance. This is the snapshot that is
 /// updated when an instance is refreshed (e.g., via `svcadm refresh ...` or
-/// [`Instance::refresh()`]).
+/// [`Instance::smf_refresh()`]).
 #[derive(Debug)]
 pub struct Snapshot<'a> {
     instance: &'a Instance<'a>,

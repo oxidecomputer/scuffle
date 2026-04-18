@@ -17,6 +17,7 @@ oxnet = "0.1.4"
 thiserror = "2.0"
 
 # optional dependencies
+bitflags = { version = "2.11", optional = true }
 daft = { version = "0.1.5", features = ["derive"], optional = true }
 
 # testing-only dependencies
@@ -44,6 +45,10 @@ name = "set-property-values"
 name = "run-isolated-configd"
 required-features = ["testing"]
 
+[[example]]
+name = "scuffle-adm"
+required-features = ["smf-by-instance"]
+
 [[test]]
 name = "property-group-type"
 required-features = ["testing"]
@@ -61,6 +66,7 @@ name = "transaction"
 required-features = ["testing"]
 
 [features]
+smf-by-instance = ["dep:bitflags"]
 daft = ["dep:daft"]
 testing = [
     "dep:camino",

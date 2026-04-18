@@ -130,11 +130,15 @@ error type of its own.
 
 ## Features
 
-`scuffle` has two optional Cargo features:
+`scuffle` has three optional Cargo features:
 
 * Enabling the `daft` feature adds implementations of
   [`daft::Diffable`][diffable] to [`Value`](https://docs.rs/scuffle/0.1.0/scuffle/value/enum.Value.html), [`ValueRef`](https://docs.rs/scuffle/0.1.0/scuffle/value/enum.ValueRef.html), and
   [`ValueKind`](https://docs.rs/scuffle/0.1.0/scuffle/value/enum.ValueKind.html).
+* Enabling the `smf-by-instance` feature adds several `Instance::smf_*`
+  methods for controlling the SMF state of an instance, but requires a
+  `libscf` that includes [recently-stabilized
+  APIs](https://www.illumos.org/issues/18043).
 * Enabling the `testing` feature adds types to support writing tests that
   interact with SMF without needing to modify system-level SMF services /
   instances / properties; see “Testing Support” below.
@@ -146,12 +150,9 @@ error type of its own.
 * \[`Scf::connect_zone()`\] uses an undocumented SCF handle decoration to
   connect to `svc.configd` inside the specified zone. This matches how
   `svcadm` and `svcprop` implement their `-z zone` flags.
-* \[`Instance::refresh()`\] uses a non-public function defined by
-  `libscf_priv.h` (`_smf_refresh_instance_i()`). There is currently no
-  public interface for refreshing an instance by handle; the only public
-  interface for instance refreshing is
-  [`libscf_sys::smf_refresh_instance()`](https://docs.rs/libscf-sys/1.2.0/libscf_sys/stubs/stubs/fn.smf_refresh_instance.html), which can only refresh instances
-  in the global zone identified by FMRI.
+* If the `smf-by-instance` Cargo feature is not enabled,
+  \[`Instance::smf_refresh()`\] uses a non-public function defined by
+  `libscf_priv.h` (`_smf_refresh_instance_i()`).
 * If the `testing` feature is enabled, it uses several other non-public
   interfaces; see “Testing Support” below.
 
