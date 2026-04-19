@@ -2,7 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-#![warn(rustdoc::broken_intra_doc_links)]
+// We have rustdoc links to types and methods that don't always exist; don't
+// warn about those broken links. Docs should be built with `--all-features` in
+// general.
+#![cfg_attr(not(feature = "testing"), allow(rustdoc::broken_intra_doc_links))]
 
 //! # scuffle
 //!
