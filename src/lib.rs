@@ -38,7 +38,7 @@
 //!     property_group_name: &str,
 //! ) -> anyhow::Result<BTreeMap<String, Vec<Value>>> {
 //!     // Get a handle to scf and the local scope.
-//!     let scf = Scf::connect_global_zone()?;
+//!     let scf = Scf::connect_current_zone()?;
 //!     let scope = scf.scope_local()?;
 //!
 //!     // Look up the property group within our snapshot by stepping through
@@ -83,7 +83,7 @@
 //!     value: ValueRef<'_>,
 //! ) -> anyhow::Result<()> {
 //!     // Get a handle to scf and the local scope.
-//!     let scf = Scf::connect_global_zone()?;
+//!     let scf = Scf::connect_current_zone()?;
 //!     let scope = scf.scope_local()?;
 //!
 //!     // Look up the property group within our instance by stepping through
