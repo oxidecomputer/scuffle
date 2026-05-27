@@ -583,16 +583,27 @@ impl ScfValue<'_> {
                         data.len(),
                     )
                 }),
-                // TODO-correctness There are explicit functions for setting
-                // AString and UString values, respectively, but the libscf_sys
-                // bindings are incorrect, so instead we to through "set from
-                // string" for them like the remainder of the fancy types.
-                // See <https://github.com/illumos/libscf-sys/issues/1>.
                 ValueRef::AString(s) => {
-                    set_from_string(ptr, SCF_TYPE_ASTRING, s)?
+                    let s = CString::new(s).map_err(|err| {
+                        ValueSetError::InvalidString {
+                            value: Box::from(s),
+                            err,
+                        }
+                    })?;
+                    LibscfError::from_ret(unsafe {
+                        libscf_sys::scf_value_set_astring(ptr, s.as_ptr())
+                    })
                 }
                 ValueRef::UString(s) => {
-                    set_from_string(ptr, SCF_TYPE_USTRING, s)?
+                    let s = CString::new(s).map_err(|err| {
+                        ValueSetError::InvalidString {
+                            value: Box::from(s),
+                            err,
+                        }
+                    })?;
+                    LibscfError::from_ret(unsafe {
+                        libscf_sys::scf_value_set_ustring(ptr, s.as_ptr())
+                    })
                 }
                 ValueRef::Uri(s) => set_from_string(ptr, SCF_TYPE_URI, s)?,
                 ValueRef::Fmri(s) => set_from_string(ptr, SCF_TYPE_FMRI, s)?,

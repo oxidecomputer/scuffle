@@ -6,6 +6,8 @@
 
 #[cfg(target_os = "illumos")]
 mod supplemental {
+    // TODO-cleanup Remove once https://github.com/illumos/libscf-sys/pull/2 is
+    // released.
     #[link(name = "scf")]
     unsafe extern "C" {
         pub fn scf_service_get_pg(
@@ -67,6 +69,8 @@ mod supplemental {
 
 #[cfg(not(target_os = "illumos"))]
 mod supplemental {
+    // TODO-cleanup Remove once https://github.com/illumos/libscf-sys/pull/2 is
+    // released.
     pub unsafe fn scf_service_get_pg(
         service: *const libscf_sys::scf_service_t,
         name: *const libc::c_char,
