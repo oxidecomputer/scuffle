@@ -21,18 +21,16 @@ pfexec chown "$LOGNAME" /out
 export RUSTFLAGS="--cfg tokio_unstable -D warnings"
 export RUSTDOCFLAGS="--document-private-items -D warnings"
 
-banner test
-
-# no features
+banner test-no-features
 ptime -m cargo test --locked --verbose
 
-# individual features
+banner test-individual-features
 ptime -m cargo test --features daft            --locked --verbose
 ptime -m cargo test --features smf-by-instance --locked --verbose
 ptime -m cargo test --features testing         --locked --verbose
 
 # we could test partial combinations of features, but that seems excessive
 
-# --all-features and all targets
+banner test-all-features
 ptime -m cargo test --doc --all-features --locked --verbose
 ptime -m cargo test --all-targets --all-features --locked --verbose
