@@ -33,5 +33,7 @@ jobs:
           cargo clippy --features daft -- -D warnings
           echo features smf-by-instance
           cargo clippy --features smf-by-instance -- -D warnings
-          echo features daft,smf-by-instance
-          cargo clippy --features daft,smf-by-instance -- -D warnings
+          echo features testing
+          cargo clippy --features testing -- -D warnings
+          echo features all-features
+          cargo clippy --all-features -- -D warnings
