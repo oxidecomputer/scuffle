@@ -15,6 +15,6 @@ org_only = true
 # approval:
 #
 allow_users = [
-        "dependabot[bot]",
-        "renovate[bot]",
+    "dependabot[bot]",
+    "renovate[bot]",
 ]
