@@ -111,7 +111,7 @@ fn main() -> anyhow::Result<()> {
 
     let scf = match args.zone.as_deref() {
         Some(z) => Scf::connect_zone(z),
-        None => Scf::connect_global_zone(),
+        None => Scf::connect_current_zone(),
     }?;
 
     let mut instance = scf.instance_from_fmri(&args.fmri)?;

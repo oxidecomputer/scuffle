@@ -1,0 +1,39 @@
+#
+# Configuration for GitHub-based CI, based on the stock GitHub Rust config.
+#
+name: Rust
+
+on: [ push, pull_request ]
+
+jobs:
+  check-style:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
+      - name: Report cargo version
+        run: cargo --version
+      - name: Report rustfmt version
+        run: cargo fmt -- --version
+      - name: Check style
+        run: cargo fmt -- --check
+
+  clippy-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@2541b1294d2704b0964813337f33b291d3f8596b
+      - name: Report cargo version
+        run: cargo --version
+      - name: Report Clippy version
+        run: cargo clippy -- --version
+      - name: Run Clippy Lints
+        run: |
+          echo features default
+          cargo clippy --all-targets -- -D warnings
+          echo features daft
+          cargo clippy --all-targets --features daft -- -D warnings
+          echo features smf-by-instance
+          cargo clippy --all-targets --features smf-by-instance -- -D warnings
+          echo features testing
+          cargo clippy --all-targets --features testing -- -D warnings
+          echo features all-features
+          cargo clippy --all-targets --all-features -- -D warnings

@@ -18,9 +18,9 @@ use std::marker::PhantomData;
 use std::ptr::NonNull;
 
 #[cfg(feature = "smf-by-instance")]
-use crate::error::ServiceRefreshAllError;
-#[cfg(feature = "smf-by-instance")]
 use crate::Service;
+#[cfg(feature = "smf-by-instance")]
+use crate::error::ServiceRefreshAllError;
 
 mod object;
 
@@ -57,10 +57,10 @@ impl Drop for Scf<'_> {
 }
 
 impl Scf<'static> {
-    /// Connect to the `svc.configd` instance in the global zone.
-    pub fn connect_global_zone() -> Result<Self, ScfError> {
+    /// Connect to the `svc.configd` instance in the current zone.
+    pub fn connect_current_zone() -> Result<Self, ScfError> {
         Self::connect_common(
-            ConnectMode::Global,
+            ConnectMode::Current,
             RefreshMechanism::Libscf(PhantomData),
         )
     }
@@ -114,7 +114,7 @@ impl<'a> Scf<'a> {
         // In both cases, we can destroy the value after calling
         // `scf_handle_decorate()`; we do that implicitly here by dropping them.
         match mode {
-            ConnectMode::Global => {
+            ConnectMode::Current => {
                 // Nothing special to do.
             }
 
@@ -278,7 +278,7 @@ impl<'a> Scf<'a> {
 }
 
 enum ConnectMode<'a> {
-    Global,
+    Current,
     Zone(&'a str),
     #[cfg(any(test, feature = "testing"))]
     DoorPath(&'a str),
@@ -308,18 +308,19 @@ impl RefreshMechanism<'_> {
     ) -> Result<(), InstanceOpError> {
         match self {
             RefreshMechanism::Libscf(_) => {
-                // The only public / committed interface for refreshing
-                // instances is `smf_refresh_instance()`, which doesn't go
-                // through our SCF handle at all, and therefore can only refresh
-                // instances in the global zone. If we were created via
+                // The primary interface for refreshing instances is
+                // `smf_refresh_instance()`, which doesn't go through our SCF
+                // handle at all, and therefore can only refresh instances in
+                // the current zone. If we were created via
                 // `Scf::connect_zone()`, that won't work - it'd try to refresh
                 // an instance of the same FMRI in the gz instead of the named
                 // zone.
                 //
-                // Instead, use a private API (from `libscf_priv.h`) that allows
-                // refreshing directly via the instance handle. This is
-                // consistent with `svcadm -z zone refresh ...`, but is
-                // obviously not ideal since it could break in the future!
+                // Instead, we either use a private API (from `libscf_priv.h`)
+                // that allows refreshing directly via the instance handle, or
+                // if the `smf-by-instance` feature is enabled, we use the newer
+                // `smf_refresh_instance_by_instance()` function that takes an
+                // instance handle instead of an FMRI.
                 instance.scf_refresh()
             }
 

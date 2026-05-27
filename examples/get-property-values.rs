@@ -125,7 +125,7 @@ fn main() -> anyhow::Result<()> {
 
     let scf = match zone.as_deref() {
         Some(z) => Scf::connect_zone(z),
-        None => Scf::connect_global_zone(),
+        None => Scf::connect_current_zone(),
     }?;
     let scope = scf.scope_local()?;
 
