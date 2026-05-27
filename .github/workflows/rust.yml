@@ -27,7 +27,11 @@ jobs:
         run: cargo clippy -- --version
       - name: Run Clippy Lints
         run: |
+          echo features default
           cargo clippy -- -D warnings
+          echo features daft
           cargo clippy --features daft -- -D warnings
+          echo features smf-by-instance
           cargo clippy --features smf-by-instance -- -D warnings
+          echo features daft,smf-by-instance
           cargo clippy --features daft,smf-by-instance -- -D warnings
