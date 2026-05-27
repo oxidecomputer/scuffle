@@ -3,10 +3,15 @@ name = "scuffle"
 version = "0.1.0"
 edition = "2024"
 license = "MPL-2.0"
+description = "High-level bindings to libscf on illumos"
+repository = "https://github.com/oxidecomputer/scuffle"
+categories = ["api-bindings"]
+keywords = ["smf", "illumos", "scf", "libscf"]
 
 [package.metadata.docs.rs]
 all-features = true
 default-target = "x86_64-unknown-illumos"
+targets = ["x86_64-unknown-illumos"]
 
 [dependencies]
 chrono = "0.4"
